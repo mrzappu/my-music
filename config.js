@@ -6,7 +6,7 @@ module.exports = {
 
   // Bot Activity
   activity: {
-    name: '/help | https://github.com/Unknownzop/MusicBot',
+    name: 'INFINITY MUSIC',
     type: 'LISTENING' // PLAYING, STREAMING, LISTENING, WATCHING, COMPETING
   },
 
