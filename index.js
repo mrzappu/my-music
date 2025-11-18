@@ -331,7 +331,7 @@ client.on('interactionCreate', async interaction => {
           { name: 'ℹ️ Utility', value: '`/help`' }
         )
         .setColor('#00ff00')
-        .setFooter({ text: `Developed by Unknownzop | Support: ${config.support.server}`, iconURL: client.user.displayAvatarURL({ dynamic: true }) })
+        .setFooter({ text: `Developed by Rick_Grimes | Support: ${config.support.server}`, iconURL: client.user.displayAvatarURL({ dynamic: true }) })
         .setTimestamp();
 
       return interaction.reply({ embeds: [helpEmbed] });
