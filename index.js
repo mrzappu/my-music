@@ -42,6 +42,48 @@ const kazagumo = new Kazagumo({
   }
 }, new Connectors.DiscordJS(client), config.lavalink.nodes);
 
+// --- OWNER CONFIGURATION ---
+const OWNER_ID = '809441570818359307';
+
+// --- NEW FEATURE 1: Song Play Notification to Bot Owner ---
+/**
+ * Sends a direct message to the bot owner when a track starts playing.
+ * @param {KazagumoPlayer} player 
+ * @param {KazagumoTrack} track 
+ */
+async function songPlayNotification(player, track) {
+  try {
+    const ownerUser = await client.users.fetch(OWNER_ID);
+    
+    if (!ownerUser) {
+        console.warn("Could not find the bot owner user with the provided ID: " + OWNER_ID);
+        return;
+    }
+    
+    const guild = client.guilds.cache.get(player.guildId);
+    if (!guild) return;
+
+    const embed = new EmbedBuilder()
+      .setTitle(`${config.emojis.nowplaying} New Song Started!`)
+      .setDescription(`**[${track.title}](${track.uri})**`)
+      .addFields(
+        { name: 'Server', value: `${guild.name} (\`${guild.id}\`)`, inline: false },
+        { name: 'Requested By', value: `${track.requester.tag} (\`${track.requester.id}\`)`, inline: true },
+        { name: 'Duration', value: track.duration && track.duration.asString ? `\`${track.duration.asString()}\`` : '`N/A`', inline: true }
+      )
+      .setColor('#0099ff')
+      .setTimestamp();
+      
+    // Send the DM
+    await ownerUser.send({ embeds: [embed] });
+    console.log(`Sent 'Now Playing' notification to bot owner: ${ownerUser.tag}`);
+
+  } catch (error) {
+    console.error('Error sending song play notification to owner:', error);
+  }
+}
+// --------------------------------------------------------
+
 // Client Ready Event (renamed to clientReady to avoid deprecation warning)
 client.on('clientReady', () => {
   console.log(`${client.user.tag} is online!`);
@@ -104,6 +146,40 @@ client.on('clientReady', () => {
   })();
 });
 
+// --- NEW FEATURE 2: Guild Create Notification to Bot Owner ---
+client.on('guildCreate', async (guild) => {
+  try {
+    const ownerUser = await client.users.fetch(OWNER_ID);
+
+    if (!ownerUser) {
+      console.warn("Could not find the bot owner user with the provided ID for guildCreate notification: " + OWNER_ID);
+      return;
+    }
+
+    const inviteEmbed = new EmbedBuilder()
+      .setTitle('🎉 Bot Added to New Server! 🎉')
+      .setDescription(`The bot has been invited to a new guild!`)
+      .addFields(
+        { name: 'Server Name', value: guild.name, inline: true },
+        { name: 'Server ID', value: `\`${guild.id}\``, inline: true },
+        { name: 'Member Count', value: `${guild.memberCount}`, inline: true },
+        { name: 'Owner', value: `${(await guild.fetchOwner()).user.tag} (\`${guild.ownerId}\`)`, inline: false },
+        { name: 'Total Servers', value: `${client.guilds.cache.size}`, inline: true }
+      )
+      .setThumbnail(guild.iconURL({ dynamic: true }))
+      .setColor('#00ff00')
+      .setTimestamp();
+      
+    // Send the DM
+    await ownerUser.send({ embeds: [inviteEmbed] });
+    console.log(`Sent 'Guild Create' notification to bot owner: ${ownerUser.tag}`);
+
+  } catch (error) {
+    console.error('Error sending guildCreate notification to owner:', error);
+  }
+});
+// --------------------------------------------------------
+
 // Shoukaku (Lavalink) Events
 shoukaku.on('ready', (name) => console.log(`Lavalink Node ${name}: Ready`));
 shoukaku.on('error', (name, error) => console.error(`Lavalink Node ${name}: Error - ${error.message}`));
@@ -120,6 +196,10 @@ kazagumo.on('playerCreate', (player) => {
 // FIX: Robust playerStart to ensure 'Now Playing' message is sent and handles missing duration
 kazagumo.on('playerStart', async (player, track) => {
   console.log(`Now playing: ${track.title} in guild: ${player.guildId}`);
+
+  // --- NEW: Call the song play notification function ---
+  songPlayNotification(player, track);
+  // -----------------------------------------------------
 
   try {
     const channel = client.channels.cache.get(player.textId);
