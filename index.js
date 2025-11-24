@@ -46,10 +46,14 @@ const kazagumo = new Kazagumo({
 const OWNER_ID = '809441570818359307';
 // Channel ID for song played notifications
 const SONG_NOTIFICATION_CHANNEL_ID = '1411369713266589787'; 
-// Channel ID for bot join notifications (NEW ID)
+// Channel ID for bot join notifications
 const BOT_JOIN_NOTIFICATION_CHANNEL_ID = '1411369682459427006';
+// Channel ID for music stopped notifications (NEW)
+const MUSIC_STOPPED_CHANNEL_ID = '1393633652537163907';
+// Channel ID for bot left server notifications (NEW)
+const BOT_LEFT_SERVER_CHANNEL_ID = '1393633926031085669';
 
-// --- FEATURE 1: Song Play Notification to Bot Owner (DM) AND Official Server (Channel) ---
+// --- FEATURE 1: Song Play Notification ---
 /**
  * Sends a direct message to the bot owner and a message to the official song notification channel when a track starts playing.
  * @param {KazagumoPlayer} player 
@@ -95,15 +99,61 @@ async function songPlayNotification(player, track) {
             
         await songNotificationChannel.send({ embeds: [channelEmbed] }).catch(err => console.error(`Failed to send channel message: ${err.message}`));
         console.log(`Sent 'Now Playing' notification to official song channel.`);
-    } else {
-        console.warn("Official song notification channel not found or is not a text channel. ID: " + SONG_NOTIFICATION_CHANNEL_ID);
     }
-
   } catch (error) {
     console.error('Error sending song play notification:', error);
   }
 }
 // --------------------------------------------------------
+
+// --- FEATURE 3: Music Stopped Notification ---
+/**
+ * Sends a notification to the designated channel when the music playback stops (player is destroyed).
+ * @param {string} guildId 
+ * @param {string} reason 
+ */
+async function musicStoppedNotification(guildId, reason = 'Bot disconnected or music was manually stopped.') {
+    try {
+        const notificationChannel = client.channels.cache.get(MUSIC_STOPPED_CHANNEL_ID);
+        if (!notificationChannel || !notificationChannel.isTextBased()) {
+            console.warn("Music stopped channel not found or is not a text channel. ID: " + MUSIC_STOPPED_CHANNEL_ID);
+            return;
+        }
+
+        const guild = client.guilds.cache.get(guildId);
+        const serverName = guild ? guild.name : 'Unknown Server';
+        
+        // Format current date and time
+        const now = new Date();
+        const dateTimeString = now.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            timeZoneName: 'short'
+        });
+
+        const embed = new EmbedBuilder()
+            .setTitle('🛑 Music Playback Stopped')
+            .setDescription(`Music playback stopped in **${serverName}** (\`${guildId}\`).`)
+            .addFields(
+                { name: 'Reason', value: reason, inline: true },
+                { name: 'Date & Time', value: `\`${dateTimeString}\``, inline: true }
+            )
+            .setColor('#FF5733')
+            .setTimestamp();
+            
+        await notificationChannel.send({ embeds: [embed] }).catch(err => console.error(`Failed to send music stopped message: ${err.message}`));
+        console.log(`Sent 'Music Stopped' notification for guild ${guildId}.`);
+
+    } catch (error) {
+        console.error('Error in musicStoppedNotification:', error);
+    }
+}
+// ---------------------------------------------
+
 
 // Client Ready Event (renamed to clientReady to avoid deprecation warning)
 client.on('clientReady', () => {
@@ -167,7 +217,7 @@ client.on('clientReady', () => {
   })();
 });
 
-// --- FEATURE 2: Guild Create Notification to Bot Owner (DM) AND Official Server (Channel) ---
+// --- FEATURE 2: Guild Create Notification ---
 client.on('guildCreate', async (guild) => {
   try {
     // --- 1. Owner DM ---
@@ -209,12 +259,56 @@ client.on('guildCreate', async (guild) => {
             
         await joinNotificationChannel.send({ embeds: [channelInviteEmbed] }).catch(err => console.error(`Failed to send channel message on guildCreate: ${err.message}`));
         console.log(`Sent 'Guild Create' notification to official bot join channel.`);
-    } else {
-        console.warn("Official bot join notification channel not found or is not a text channel. ID: " + BOT_JOIN_NOTIFICATION_CHANNEL_ID);
     }
 
   } catch (error) {
     console.error('Error sending guildCreate notification:', error);
+  }
+});
+
+// --- FEATURE 4: Guild Delete Notification ---
+client.on('guildDelete', async (guild) => {
+  try {
+    // --- 1. Owner DM ---
+    const ownerUser = await client.users.fetch(OWNER_ID);
+
+    const leftEmbedOwner = new EmbedBuilder()
+      .setTitle('❌ Bot Left Server! (DM)')
+      .setDescription(`The bot has been removed from a guild.`)
+      .addFields(
+        { name: 'Server Name', value: guild.name, inline: true },
+        { name: 'Server ID', value: `\`${guild.id}\``, inline: true },
+        { name: 'Member Count (Before leaving)', value: `${guild.memberCount}`, inline: true },
+        { name: 'New Total Servers', value: `${client.guilds.cache.size}`, inline: false }
+      )
+      .setThumbnail(guild.iconURL({ dynamic: true }))
+      .setColor('#FF0000')
+      .setTimestamp();
+      
+    if (ownerUser) {
+        await ownerUser.send({ embeds: [leftEmbedOwner] }).catch(err => console.error(`Failed to send DM to owner on guildDelete: ${err.message}`));
+        console.log(`Sent 'Guild Delete' DM to bot owner.`);
+    }
+
+    // --- 2. Official Server Channel Message (Bot Left Server Channel) ---
+    const leftNotificationChannel = client.channels.cache.get(BOT_LEFT_SERVER_CHANNEL_ID);
+
+    if (leftNotificationChannel && leftNotificationChannel.isTextBased()) {
+        const channelLeftEmbed = new EmbedBuilder()
+            .setTitle('📉 Bot Left Server')
+            .setDescription(`The bot has been removed from a server.`)
+            .addFields(
+                { name: 'Server Name', value: guild.name, inline: true },
+                { name: 'Total Servers Now', value: `${client.guilds.cache.size}`, inline: true }
+            )
+            .setColor('#FF8C00') 
+            .setTimestamp();
+            
+        await leftNotificationChannel.send({ embeds: [channelLeftEmbed] }).catch(err => console.error(`Failed to send channel message on guildDelete: ${err.message}`));
+        console.log(`Sent 'Guild Delete' notification to official bot left channel.`);
+    }
+  } catch (error) {
+    console.error('Error sending guildDelete notification:', error);
   }
 });
 // --------------------------------------------------------
@@ -378,6 +472,10 @@ kazagumo.on('playerResolveError', (player, track, message) => {
 
 kazagumo.on('playerDestroy', async (player) => {
   console.log(`Player destroyed for guild: ${player.guildId}`);
+
+  // --- NEW: Send Music Stopped Notification (Feature 3) ---
+  musicStoppedNotification(player.guildId);
+  // --------------------------------------------------------
 
   try {
     const message = player.data.get('currentMessage');
