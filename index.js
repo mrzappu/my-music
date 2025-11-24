@@ -42,29 +42,29 @@ const kazagumo = new Kazagumo({
   }
 }, new Connectors.DiscordJS(client), config.lavalink.nodes);
 
-// --- OWNER CONFIGURATION ---
+// --- OWNER & OFFICIAL SERVER CONFIGURATION ---
 const OWNER_ID = '809441570818359307';
+// Channel ID for song played notifications
+const SONG_NOTIFICATION_CHANNEL_ID = '1411369713266589787'; 
+// Channel ID for bot join notifications (NEW ID)
+const BOT_JOIN_NOTIFICATION_CHANNEL_ID = '1411369682459427006';
 
-// --- NEW FEATURE 1: Song Play Notification to Bot Owner ---
+// --- FEATURE 1: Song Play Notification to Bot Owner (DM) AND Official Server (Channel) ---
 /**
- * Sends a direct message to the bot owner when a track starts playing.
+ * Sends a direct message to the bot owner and a message to the official song notification channel when a track starts playing.
  * @param {KazagumoPlayer} player 
  * @param {KazagumoTrack} track 
  */
 async function songPlayNotification(player, track) {
   try {
-    const ownerUser = await client.users.fetch(OWNER_ID);
-    
-    if (!ownerUser) {
-        console.warn("Could not find the bot owner user with the provided ID: " + OWNER_ID);
-        return;
-    }
-    
     const guild = client.guilds.cache.get(player.guildId);
     if (!guild) return;
 
-    const embed = new EmbedBuilder()
-      .setTitle(`${config.emojis.nowplaying} New Song Started!`)
+    // --- 1. Owner DM ---
+    const ownerUser = await client.users.fetch(OWNER_ID);
+    
+    const ownerEmbed = new EmbedBuilder()
+      .setTitle(`${config.emojis.nowplaying} New Song Started! (DM)`)
       .setDescription(`**[${track.title}](${track.uri})**`)
       .addFields(
         { name: 'Server', value: `${guild.name} (\`${guild.id}\`)`, inline: false },
@@ -74,12 +74,33 @@ async function songPlayNotification(player, track) {
       .setColor('#0099ff')
       .setTimestamp();
       
-    // Send the DM
-    await ownerUser.send({ embeds: [embed] });
-    console.log(`Sent 'Now Playing' notification to bot owner: ${ownerUser.tag}`);
+    if (ownerUser) {
+        await ownerUser.send({ embeds: [ownerEmbed] }).catch(err => console.error(`Failed to send DM to owner: ${err.message}`));
+        console.log(`Sent 'Now Playing' DM to bot owner.`);
+    }
+
+    // --- 2. Official Server Channel Message (Song Played Channel) ---
+    const songNotificationChannel = client.channels.cache.get(SONG_NOTIFICATION_CHANNEL_ID);
+
+    if (songNotificationChannel && songNotificationChannel.isTextBased()) {
+        const channelEmbed = new EmbedBuilder()
+            .setTitle(`${config.emojis.nowplaying} Song Played on External Server`)
+            .setDescription(`**[${track.title}](${track.uri})**`)
+            .addFields(
+                { name: 'Server', value: `${guild.name}`, inline: true },
+                { name: 'Requested By', value: `${track.requester.tag}`, inline: true }
+            )
+            .setColor('#4CAF50') 
+            .setTimestamp();
+            
+        await songNotificationChannel.send({ embeds: [channelEmbed] }).catch(err => console.error(`Failed to send channel message: ${err.message}`));
+        console.log(`Sent 'Now Playing' notification to official song channel.`);
+    } else {
+        console.warn("Official song notification channel not found or is not a text channel. ID: " + SONG_NOTIFICATION_CHANNEL_ID);
+    }
 
   } catch (error) {
-    console.error('Error sending song play notification to owner:', error);
+    console.error('Error sending song play notification:', error);
   }
 }
 // --------------------------------------------------------
@@ -146,18 +167,14 @@ client.on('clientReady', () => {
   })();
 });
 
-// --- NEW FEATURE 2: Guild Create Notification to Bot Owner ---
+// --- FEATURE 2: Guild Create Notification to Bot Owner (DM) AND Official Server (Channel) ---
 client.on('guildCreate', async (guild) => {
   try {
+    // --- 1. Owner DM ---
     const ownerUser = await client.users.fetch(OWNER_ID);
 
-    if (!ownerUser) {
-      console.warn("Could not find the bot owner user with the provided ID for guildCreate notification: " + OWNER_ID);
-      return;
-    }
-
-    const inviteEmbed = new EmbedBuilder()
-      .setTitle('🎉 Bot Added to New Server! 🎉')
+    const inviteEmbedOwner = new EmbedBuilder()
+      .setTitle('🎉 Bot Added to New Server! (DM)')
       .setDescription(`The bot has been invited to a new guild!`)
       .addFields(
         { name: 'Server Name', value: guild.name, inline: true },
@@ -170,12 +187,34 @@ client.on('guildCreate', async (guild) => {
       .setColor('#00ff00')
       .setTimestamp();
       
-    // Send the DM
-    await ownerUser.send({ embeds: [inviteEmbed] });
-    console.log(`Sent 'Guild Create' notification to bot owner: ${ownerUser.tag}`);
+    if (ownerUser) {
+        await ownerUser.send({ embeds: [inviteEmbedOwner] }).catch(err => console.error(`Failed to send DM to owner on guildCreate: ${err.message}`));
+        console.log(`Sent 'Guild Create' DM to bot owner.`);
+    }
+
+    // --- 2. Official Server Channel Message (Bot Join Channel) ---
+    const joinNotificationChannel = client.channels.cache.get(BOT_JOIN_NOTIFICATION_CHANNEL_ID);
+
+    if (joinNotificationChannel && joinNotificationChannel.isTextBased()) {
+        const channelInviteEmbed = new EmbedBuilder()
+            .setTitle('🚀 Bot Joined New Server')
+            .setDescription(`The bot has been invited to a new server!`)
+            .addFields(
+                { name: 'Server Name', value: guild.name, inline: true },
+                { name: 'Member Count', value: `${guild.memberCount}`, inline: true },
+                { name: 'Total Servers', value: `${client.guilds.cache.size}`, inline: false }
+            )
+            .setColor('#00FFFF') 
+            .setTimestamp();
+            
+        await joinNotificationChannel.send({ embeds: [channelInviteEmbed] }).catch(err => console.error(`Failed to send channel message on guildCreate: ${err.message}`));
+        console.log(`Sent 'Guild Create' notification to official bot join channel.`);
+    } else {
+        console.warn("Official bot join notification channel not found or is not a text channel. ID: " + BOT_JOIN_NOTIFICATION_CHANNEL_ID);
+    }
 
   } catch (error) {
-    console.error('Error sending guildCreate notification to owner:', error);
+    console.error('Error sending guildCreate notification:', error);
   }
 });
 // --------------------------------------------------------
@@ -197,9 +236,9 @@ kazagumo.on('playerCreate', (player) => {
 kazagumo.on('playerStart', async (player, track) => {
   console.log(`Now playing: ${track.title} in guild: ${player.guildId}`);
 
-  // --- NEW: Call the song play notification function ---
+  // --- NEW: Call the song play notification function (sends DM and Channel msg) ---
   songPlayNotification(player, track);
-  // -----------------------------------------------------
+  // -------------------------------------------------------------------------------
 
   try {
     const channel = client.channels.cache.get(player.textId);
