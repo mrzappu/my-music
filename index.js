@@ -1,6 +1,6 @@
 require('dotenv').config();
 const config = require('./config');
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ActivityType, StringSelectMenuBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ActivityType, StringSelectMenuBuilder, ChannelType } = require('discord.js');
 
 const express = require('express');
 const app = express();
@@ -48,9 +48,9 @@ const OWNER_ID = '809441570818359307';
 const SONG_NOTIFICATION_CHANNEL_ID = '1411369713266589787'; 
 // Channel ID for bot join notifications
 const BOT_JOIN_NOTIFICATION_CHANNEL_ID = '1411369682459427006';
-// Channel ID for music stopped notifications (NEW)
+// Channel ID for music stopped notifications
 const MUSIC_STOPPED_CHANNEL_ID = '1393633652537163907';
-// Channel ID for bot left server notifications (NEW)
+// Channel ID for bot left server notifications
 const BOT_LEFT_SERVER_CHANNEL_ID = '1393633926031085669';
 
 // --- FEATURE 1: Song Play Notification ---
@@ -64,14 +64,19 @@ async function songPlayNotification(player, track) {
     const guild = client.guilds.cache.get(player.guildId);
     if (!guild) return;
 
+    const voiceChannel = client.channels.cache.get(player.voiceId);
+    const vcName = voiceChannel ? voiceChannel.name : 'Unknown VC';
+
     // --- 1. Owner DM ---
     const ownerUser = await client.users.fetch(OWNER_ID);
     
     const ownerEmbed = new EmbedBuilder()
-      .setTitle(`${config.emojis.nowplaying} New Song Started! (DM)`)
+      .setTitle(`🎶 New Song Started! (DM)`) // Enhanced Emoji
       .setDescription(`**[${track.title}](${track.uri})**`)
+      .setThumbnail(guild.iconURL({ dynamic: true })) // Add Server Icon
       .addFields(
         { name: 'Server', value: `${guild.name} (\`${guild.id}\`)`, inline: false },
+        { name: 'Voice Channel', value: `${vcName} (\`${player.voiceId}\`)`, inline: true }, // Add VC Info
         { name: 'Requested By', value: `${track.requester.tag} (\`${track.requester.id}\`)`, inline: true },
         { name: 'Duration', value: track.duration && track.duration.asString ? `\`${track.duration.asString()}\`` : '`N/A`', inline: true }
       )
@@ -88,10 +93,12 @@ async function songPlayNotification(player, track) {
 
     if (songNotificationChannel && songNotificationChannel.isTextBased()) {
         const channelEmbed = new EmbedBuilder()
-            .setTitle(`${config.emojis.nowplaying} Song Played on External Server`)
+            .setTitle(`🎶 Song Played on External Server`) // Enhanced Emoji
             .setDescription(`**[${track.title}](${track.uri})**`)
+            .setThumbnail(guild.iconURL({ dynamic: true })) // Add Server Icon
             .addFields(
                 { name: 'Server', value: `${guild.name}`, inline: true },
+                { name: 'Voice Channel', value: `${vcName}`, inline: true }, // Add VC Info
                 { name: 'Requested By', value: `${track.requester.tag}`, inline: true }
             )
             .setColor('#4CAF50') 
@@ -99,7 +106,10 @@ async function songPlayNotification(player, track) {
             
         await songNotificationChannel.send({ embeds: [channelEmbed] }).catch(err => console.error(`Failed to send channel message: ${err.message}`));
         console.log(`Sent 'Now Playing' notification to official song channel.`);
+    } else {
+        console.warn("Official song notification channel not found or is not a text channel. ID: " + SONG_NOTIFICATION_CHANNEL_ID);
     }
+
   } catch (error) {
     console.error('Error sending song play notification:', error);
   }
@@ -110,9 +120,10 @@ async function songPlayNotification(player, track) {
 /**
  * Sends a notification to the designated channel when the music playback stops (player is destroyed).
  * @param {string} guildId 
+ * @param {string} voiceId
  * @param {string} reason 
  */
-async function musicStoppedNotification(guildId, reason = 'Bot disconnected or music was manually stopped.') {
+async function musicStoppedNotification(guildId, voiceId, reason = 'Bot disconnected or music was manually stopped.') {
     try {
         const notificationChannel = client.channels.cache.get(MUSIC_STOPPED_CHANNEL_ID);
         if (!notificationChannel || !notificationChannel.isTextBased()) {
@@ -135,11 +146,19 @@ async function musicStoppedNotification(guildId, reason = 'Bot disconnected or m
             timeZoneName: 'short'
         });
 
+        let voiceChannelName = 'N/A';
+        if (voiceId) {
+            const vc = client.channels.cache.get(voiceId);
+            voiceChannelName = vc ? vc.name : `VC ID: ${voiceId}`;
+        }
+
         const embed = new EmbedBuilder()
-            .setTitle('🛑 Music Playback Stopped')
-            .setDescription(`Music playback stopped in **${serverName}** (\`${guildId}\`).`)
+            .setTitle('🔇 Music Playback Stopped') // Enhanced Emoji
+            .setDescription(`Playback stopped in **${serverName}** (\`${guildId}\`).`)
+            .setThumbnail(guild ? guild.iconURL({ dynamic: true }) : null) // Add Server Icon
             .addFields(
-                { name: 'Reason', value: reason, inline: true },
+                { name: 'Reason', value: reason, inline: false },
+                { name: 'Voice Channel', value: voiceChannelName, inline: true }, // Add VC Info
                 { name: 'Date & Time', value: `\`${dateTimeString}\``, inline: true }
             )
             .setColor('#FF5733')
@@ -217,23 +236,45 @@ client.on('clientReady', () => {
   })();
 });
 
-// --- FEATURE 2: Guild Create Notification ---
+// --- FEATURE 2: Guild Create Notification (Bot Joined) ---
 client.on('guildCreate', async (guild) => {
   try {
+    // --- Attempt to generate an invite link for the server ---
+    let inviteLink = 'N/A (No suitable channel found or missing permissions)';
+    try {
+        const textChannel = guild.channels.cache
+            .filter(c => c.type === ChannelType.GuildText && c.viewable && c.permissionsFor(guild.members.me).has('CreateInstantInvite'))
+            .sort((a, b) => a.position - b.position)
+            .first();
+
+        if (textChannel) {
+            const invite = await textChannel.createInvite({
+                maxAge: 0, // 0 means unlimited
+                maxUses: 0, // 0 means unlimited
+                reason: 'Bot join notification link'
+            });
+            inviteLink = `[Click to Join](${invite.url})`;
+        }
+    } catch (err) {
+        console.error(`Failed to create invite for ${guild.name}: ${err.message}`);
+    }
+    // ---------------------------------------------------------
+    
     // --- 1. Owner DM ---
     const ownerUser = await client.users.fetch(OWNER_ID);
 
     const inviteEmbedOwner = new EmbedBuilder()
       .setTitle('🎉 Bot Added to New Server! (DM)')
       .setDescription(`The bot has been invited to a new guild!`)
+      .setThumbnail(guild.iconURL({ dynamic: true })) // Add Server Icon
       .addFields(
         { name: 'Server Name', value: guild.name, inline: true },
         { name: 'Server ID', value: `\`${guild.id}\``, inline: true },
         { name: 'Member Count', value: `${guild.memberCount}`, inline: true },
         { name: 'Owner', value: `${(await guild.fetchOwner()).user.tag} (\`${guild.ownerId}\`)`, inline: false },
-        { name: 'Total Servers', value: `${client.guilds.cache.size}`, inline: true }
+        { name: 'Total Servers', value: `${client.guilds.cache.size}`, inline: true },
+        { name: 'Invite Link', value: inviteLink, inline: false }
       )
-      .setThumbnail(guild.iconURL({ dynamic: true }))
       .setColor('#00ff00')
       .setTimestamp();
       
@@ -247,18 +288,22 @@ client.on('guildCreate', async (guild) => {
 
     if (joinNotificationChannel && joinNotificationChannel.isTextBased()) {
         const channelInviteEmbed = new EmbedBuilder()
-            .setTitle('🚀 Bot Joined New Server')
+            .setTitle('🚀 Bot Joined New Server! 🥳') // Enhanced Emoji
             .setDescription(`The bot has been invited to a new server!`)
+            .setThumbnail(guild.iconURL({ dynamic: true })) // Add Server Icon
             .addFields(
                 { name: 'Server Name', value: guild.name, inline: true },
                 { name: 'Member Count', value: `${guild.memberCount}`, inline: true },
-                { name: 'Total Servers', value: `${client.guilds.cache.size}`, inline: false }
+                { name: 'Total Servers', value: `${client.guilds.cache.size}`, inline: false },
+                { name: 'Invite Link', value: inviteLink, inline: false } // Add Invite Link
             )
             .setColor('#00FFFF') 
             .setTimestamp();
             
         await joinNotificationChannel.send({ embeds: [channelInviteEmbed] }).catch(err => console.error(`Failed to send channel message on guildCreate: ${err.message}`));
         console.log(`Sent 'Guild Create' notification to official bot join channel.`);
+    } else {
+        console.warn("Official bot join notification channel not found or is not a text channel. ID: " + BOT_JOIN_NOTIFICATION_CHANNEL_ID);
     }
 
   } catch (error) {
@@ -266,22 +311,22 @@ client.on('guildCreate', async (guild) => {
   }
 });
 
-// --- FEATURE 4: Guild Delete Notification ---
+// --- FEATURE 4: Guild Delete Notification (Bot Left Server) ---
 client.on('guildDelete', async (guild) => {
   try {
     // --- 1. Owner DM ---
     const ownerUser = await client.users.fetch(OWNER_ID);
 
     const leftEmbedOwner = new EmbedBuilder()
-      .setTitle('❌ Bot Left Server! (DM)')
+      .setTitle('💔 Bot Left Server! (DM)') // Enhanced Emoji
       .setDescription(`The bot has been removed from a guild.`)
+      .setThumbnail(guild.iconURL({ dynamic: true })) // Add Server Icon
       .addFields(
         { name: 'Server Name', value: guild.name, inline: true },
         { name: 'Server ID', value: `\`${guild.id}\``, inline: true },
         { name: 'Member Count (Before leaving)', value: `${guild.memberCount}`, inline: true },
         { name: 'New Total Servers', value: `${client.guilds.cache.size}`, inline: false }
       )
-      .setThumbnail(guild.iconURL({ dynamic: true }))
       .setColor('#FF0000')
       .setTimestamp();
       
@@ -295,17 +340,22 @@ client.on('guildDelete', async (guild) => {
 
     if (leftNotificationChannel && leftNotificationChannel.isTextBased()) {
         const channelLeftEmbed = new EmbedBuilder()
-            .setTitle('📉 Bot Left Server')
-            .setDescription(`The bot has been removed from a server.`)
+            .setTitle('📉 Bot Left Server') // Enhanced Emoji
+            .setDescription(`The bot has been removed from the server **${guild.name}**!`)
+            .setThumbnail(guild.iconURL({ dynamic: true })) // Add Server Icon
             .addFields(
                 { name: 'Server Name', value: guild.name, inline: true },
-                { name: 'Total Servers Now', value: `${client.guilds.cache.size}`, inline: true }
+                { name: 'Server ID', value: `\`${guild.id}\``, inline: true },
+                { name: 'Total Servers Now', value: `${client.guilds.cache.size}`, inline: false },
+                { name: 'Invite Link Status', value: `*Unable to create invite (bot left). Check support server for help: ${config.support.server}*`, inline: false } // Add Status
             )
             .setColor('#FF8C00') 
             .setTimestamp();
             
         await leftNotificationChannel.send({ embeds: [channelLeftEmbed] }).catch(err => console.error(`Failed to send channel message on guildDelete: ${err.message}`));
         console.log(`Sent 'Guild Delete' notification to official bot left channel.`);
+    } else {
+        console.warn("Official bot left server channel not found or is not a text channel. ID: " + BOT_LEFT_SERVER_CHANNEL_ID);
     }
   } catch (error) {
     console.error('Error sending guildDelete notification:', error);
@@ -474,7 +524,8 @@ kazagumo.on('playerDestroy', async (player) => {
   console.log(`Player destroyed for guild: ${player.guildId}`);
 
   // --- NEW: Send Music Stopped Notification (Feature 3) ---
-  musicStoppedNotification(player.guildId);
+  const reason = player.queue.current ? `Queue ended after playing: ${player.queue.current.title}` : 'Queue ended.';
+  musicStoppedNotification(player.guildId, player.voiceId, reason);
   // --------------------------------------------------------
 
   try {
