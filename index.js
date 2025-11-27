@@ -56,6 +56,33 @@ const BOT_LEFT_SERVER_CHANNEL_ID = '1393633926031085669';
 // NEW: Lavalink Status Notification Channel ID
 const LAVALINK_STATUS_CHANNEL_ID = '1389121367332622337'; // Added Channel ID
 
+// --- UTILITY FUNCTION: msToTime ---
+/**
+ * Converts milliseconds to a human-readable time string (M:SS or H:MM:SS).
+ * This replaces the error-prone KazagumoTrack.formatLength.
+ * @param {number} duration - Duration in milliseconds.
+ * @returns {string} Formatted time string.
+ */
+function msToTime(duration) {
+    if (!duration || duration < 0) return 'N/A';
+    
+    const seconds = Math.floor((duration / 1000) % 60);
+    const minutes = Math.floor((duration / (1000 * 60)) % 60);
+    const hours = Math.floor((duration / (1000 * 60 * 60)));
+
+    const sec = String(seconds).padStart(2, '0');
+    
+    if (hours > 0) {
+        const min = String(minutes).padStart(2, '0');
+        return `${hours}:${min}:${sec}`;
+    } else {
+        const totalMinutes = Math.floor(duration / (1000 * 60));
+        return `${totalMinutes}:${sec}`;
+    }
+}
+// -----------------------------------
+
+
 // --- FEATURE 1: Song Play Notification ---
 /**
  * Sends a direct message to the bot owner and a message to the official song notification channel when a track starts playing.
@@ -81,8 +108,8 @@ async function songPlayNotification(player, track) {
         { name: 'Server', value: `${guild.name} (\`${guild.id}\`)`, inline: false },
         { name: 'Voice Channel', value: `${vcName} (\`${player.voiceId}\`)`, inline: true }, // Add VC Info
         { name: 'Requested By', value: `${track.requester.tag} (\`${track.requester.id}\`)`, inline: true },
-        // FIX: Renamed formatedLength -> formatLength
-        { name: 'Duration', value: track.duration ? `\`${KazagumoTrack.formatLength(track.duration)}\`` : '`N/A`', inline: true }
+        // FIX: Using msToTime
+        { name: 'Duration', value: track.duration ? `\`${msToTime(track.duration)}\`` : '`N/A`', inline: true }
       )
       .setColor('#0099ff')
       .setTimestamp();
@@ -447,8 +474,8 @@ kazagumo.on('playerStart', async (player, track) => {
     const channel = client.channels.cache.get(player.textId);
 
     if (channel) {
-      // FIX: Renamed formatedLength -> formatLength
-      const durationString = track.duration ? KazagumoTrack.formatLength(track.duration) : 'N/A';
+      // FIX: Using msToTime
+      const durationString = track.duration ? msToTime(track.duration) : 'N/A';
 
       // Create the "Now Playing" embed
       const embed = new EmbedBuilder()
@@ -822,11 +849,11 @@ client.on('interactionCreate', async interaction => {
         if (!player.queue.current) {
           queueEmbed.setDescription('The queue is empty.');
         } else {
-          // FIX: Renamed formatedLength -> formatLength
-          const tracks = player.queue.map((track, index) => `${index + 1}. [${track.title}](${track.uri}) - \`[${KazagumoTrack.formatLength(track.duration)}]\``).slice(0, 10);
+          // FIX: Using msToTime
+          const tracks = player.queue.map((track, index) => `${index + 1}. [${track.title}](${track.uri}) - \`[${msToTime(track.duration)}]\``).slice(0, 10);
           
-          // FIX: Renamed formatedLength -> formatLength for current track too
-          queueEmbed.setDescription(`**Now Playing:** [${player.queue.current.title}](${player.queue.current.uri}) - \`[${KazagumoTrack.formatLength(player.queue.current.duration)}]\`\n\n**Up Next:**\n${tracks.join('\n') || 'No more tracks in queue.'}`);
+          // FIX: Using msToTime for current track too
+          queueEmbed.setDescription(`**Now Playing:** [${player.queue.current.title}](${player.queue.current.uri}) - \`[${msToTime(player.queue.current.duration)}]\`\n\n**Up Next:**\n${tracks.join('\n') || 'No more tracks in queue.'}`);
 
           if (player.queue.length > 10) {
             queueEmbed.setFooter({ text: `+${player.queue.length - 10} more tracks in queue.` });
@@ -843,9 +870,9 @@ client.on('interactionCreate', async interaction => {
           return interaction.reply({ content: `${config.emojis.error} No music is currently playing.`, flags: 64 });
         }
 
-        // FIX: Renamed formatedLength -> formatLength
-        const durationString = currentTrack.duration ? KazagumoTrack.formatLength(currentTrack.duration) : 'N/A';
-        const positionString = player.position ? KazagumoTrack.formatLength(player.position) : '0:00';
+        // FIX: Using msToTime
+        const durationString = currentTrack.duration ? msToTime(currentTrack.duration) : 'N/A';
+        const positionString = player.position ? msToTime(player.position) : '0:00';
 
         const npEmbed = new EmbedBuilder()
           .setTitle(`${config.emojis.nowplaying} Now Playing`)
@@ -916,14 +943,14 @@ client.on('interactionCreate', async interaction => {
         const totalDurationSeconds = Math.floor(totalDurationMs / 1000);
 
         if (seekTimeMs < 0 || seekTimeMs > totalDurationMs) {
-            // FIX: Renamed formatedLength -> formatLength
-            return interaction.reply({ content: `${config.emojis.error} Seek time must be between 0 and ${KazagumoTrack.formatLength(totalDurationMs)}.`, flags: 64 });
+            // FIX: Using msToTime
+            return interaction.reply({ content: `${config.emojis.error} Seek time must be between 0 and ${msToTime(totalDurationMs)}.`, flags: 64 });
         }
 
         await player.seek(seekTimeMs);
         
-        // FIX: Renamed formatedLength -> formatLength
-        const seekTimeFormatted = KazagumoTrack.formatLength(seekTimeMs);
+        // FIX: Using msToTime
+        const seekTimeFormatted = msToTime(seekTimeMs);
         
         interaction.reply({ content: `${config.emojis.seek} Seeked to **${seekTimeFormatted}** in the track.` });
         break;
