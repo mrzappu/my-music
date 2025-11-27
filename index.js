@@ -359,7 +359,7 @@ client.on('guildDelete', async (guild) => {
     console.error('Error sending guildDelete notification:', error);
   }
 });
-// --------------------------------------------------------
+
 
 // Shoukaku (Lavalink) Events
 shoukaku.on('ready', (name) => console.log(`Lavalink Node ${name}: Ready`));
@@ -401,6 +401,7 @@ kazagumo.on('playerStart', async (player, track) => {
       // Create action row with control buttons (Using primary style for Pause initially)
       const controlsRow = new ActionRowBuilder()
         .addComponents(
+          // Uses the new custom animated emojis from config.js
           new ButtonBuilder().setCustomId('pause').setLabel('Pause').setStyle(ButtonStyle.Primary).setEmoji(config.emojis.pause),
           new ButtonBuilder().setCustomId('skip').setLabel('Skip').setStyle(ButtonStyle.Secondary).setEmoji(config.emojis.skip),
           new ButtonBuilder().setCustomId('stop').setLabel('Stop').setStyle(ButtonStyle.Danger).setEmoji(config.emojis.stop),
@@ -537,7 +538,7 @@ kazagumo.on('playerDestroy', async (player) => {
           await message.edit({ components: [new ActionRowBuilder().addComponents(disabledButtons)] });
         }
       } catch (error) {
-        console.error('Error disabling buttons in playerDestroy:', error);
+        console.error('Error in playerDestroy message cleanup:', error);
       }
     }
   } catch (error) {
@@ -890,6 +891,7 @@ client.on('interactionCreate', async interaction => {
         if (loopButtonIndex !== -1) {
             newButton = ButtonBuilder.from(interaction.message.components[0].components[loopButtonIndex])
                 .setLabel(newLoopMode === 'none' ? 'Loop' : `Loop: ${newLoopMode.toUpperCase()}`)
+                .setEmoji(config.emojis.loop) // Always uses the animated loop emoji
                 .setStyle(loopStyle);
 
             // Rebuild the components array
@@ -916,5 +918,4 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-// FIX: Renamed 'ready' to 'clientReady' here as well
 client.login(config.token);
