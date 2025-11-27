@@ -56,7 +56,7 @@ const BOT_LEFT_SERVER_CHANNEL_ID = '1393633926031085669';
 // NEW: Lavalink Status Notification Channel ID
 const LAVALINK_STATUS_CHANNEL_ID = '1389121367332622337'; // Added Channel ID
 
-// --- UTILITY FUNCTION: msToTime ---
+// --- UTILITY FUNCTION: msToTime (FIX for KazagumoTrack.formatLength Error) ---
 /**
  * Converts milliseconds to a human-readable time string (M:SS or H:MM:SS).
  * This replaces the error-prone KazagumoTrack.formatLength.
@@ -922,7 +922,7 @@ client.on('interactionCreate', async interaction => {
         interaction.reply({ content: `${config.emojis.success} 24/7 mode is now **${newState}**. The bot will ${newState === 'enabled' ? 'stay in the voice channel.' : 'disconnect when the queue is empty.'}` });
         break;
         
-      // Seek Command Handler - FIX: Variable renamed to 'seekTrack'
+      // Seek Command Handler 
       case 'seek':
         const timeInput = options.getString('time');
         const seekTrack = player.queue.current; 
@@ -937,10 +937,7 @@ client.on('interactionCreate', async interaction => {
             return interaction.reply({ content: `${config.emojis.error} Invalid time format. Use M:SS (e.g., 1:30) or SSs (e.g., 90s).`, flags: 64 });
         }
         
-        // Convert to seconds for display
-        const totalDurationMs = seekTrack.duration; // Use seekTrack
-        const seekTimeSeconds = Math.floor(seekTimeMs / 1000);
-        const totalDurationSeconds = Math.floor(totalDurationMs / 1000);
+        const totalDurationMs = seekTrack.duration; 
 
         if (seekTimeMs < 0 || seekTimeMs > totalDurationMs) {
             // FIX: Using msToTime
