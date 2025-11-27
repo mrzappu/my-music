@@ -79,7 +79,7 @@ async function songPlayNotification(player, track) {
         { name: 'Server', value: `${guild.name} (\`${guild.id}\`)`, inline: false },
         { name: 'Voice Channel', value: `${vcName} (\`${player.voiceId}\`)`, inline: true }, // Add VC Info
         { name: 'Requested By', value: `${track.requester.tag} (\`${track.requester.id}\`)`, inline: true },
-        // FIX: Using KazagumoTrack.formatedLength helper for duration
+        // FIX: Use KazagumoTrack.formatedLength utility
         { name: 'Duration', value: track.duration ? `\`${KazagumoTrack.formatedLength(track.duration)}\`` : '`N/A`', inline: true }
       )
       .setColor('#0099ff')
@@ -180,7 +180,6 @@ async function musicStoppedNotification(guildId, voiceId, reason = 'Bot disconne
 client.on('clientReady', () => {
   console.log(`${client.user.tag} is online!`);
 
-  // Set Static Activity
   client.user.setActivity({
     name: config.activity.name,
     type: ActivityType[config.activity.type],
@@ -391,7 +390,7 @@ kazagumo.on('playerStart', async (player, track) => {
     const channel = client.channels.cache.get(player.textId);
 
     if (channel) {
-      // Safely check for track duration
+      // FIX: Use KazagumoTrack.formatedLength helper for duration
       const durationString = track.duration ? KazagumoTrack.formatedLength(track.duration) : 'N/A';
 
       // Create the "Now Playing" embed
@@ -526,7 +525,7 @@ kazagumo.on('playerResolveError', (player, track, message) => {
 kazagumo.on('playerDestroy', async (player) => {
   console.log(`Player destroyed for guild: ${player.guildId}`);
 
-  // Send Music Stopped Notification
+  // Send Music Stopped Notification (Feature 3)
   const reason = player.queue.current ? `Queue ended after playing: ${player.queue.current.title}` : 'Queue ended.';
   musicStoppedNotification(player.guildId, player.voiceId, reason);
 
@@ -584,7 +583,7 @@ client.on('interactionCreate', async interaction => {
   }
 
   // Check for permissions (Connect and Speak)
-  // FIX: Use PermissionFlagsBits
+  // FIX: Use PermissionFlagsBits.Connect and PermissionFlagsBits.Speak
   if (voiceChannel && (!permissions.has(PermissionFlagsBits.Connect) || !permissions.has(PermissionFlagsBits.Speak))) {
     return interaction.reply({ content: `${config.emojis.error} I need the **CONNECT** and **SPEAK** permissions in your voice channel.`, flags: 64 });
   }
@@ -607,7 +606,7 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply({ embeds: [helpEmbed] });
     }
 
-    // 'play' command
+    // FIX: 'play' command updated for crash prevention and proper flow
     if (commandName === 'play') {
       // FIX: Wrap deferReply in try/catch to prevent bot crash on 10062 timeout
       try {
@@ -690,7 +689,7 @@ client.on('interactionCreate', async interaction => {
     switch (commandName) {
       case 'skip':
         if (player.queue.length > 0) {
-          // FIX: Use current track title
+          // FIX: Use current track title and check for existence
           const skippedTrackTitle = player.queue.current ? player.queue.current.title : 'the current song';
           await player.skip();
           interaction.reply({ content: `${config.emojis.skip} Skipped **${skippedTrackTitle}**.` });
@@ -708,7 +707,8 @@ client.on('interactionCreate', async interaction => {
       case 'pause':
         if (!player.paused) {
           player.pause(true);
-          interaction.reply({ content: `${config.emojis.pause} Music paused.` });
+          // CUSTOM MESSAGE: This Music Pause Now
+          interaction.reply({ content: `${config.emojis.pause} **This Music Pause Now**` });
         } else {
           interaction.reply({ content: `${config.emojis.warning} Music is already paused.`, flags: 64 });
         }
@@ -717,7 +717,8 @@ client.on('interactionCreate', async interaction => {
       case 'resume':
         if (player.paused) {
           player.pause(false);
-          interaction.reply({ content: `${config.emojis.resume} Music resumed.` });
+          // CUSTOM MESSAGE: This Music Resume Back
+          interaction.reply({ content: `${config.emojis.resume} **This Music Resume Back**` });
         } else {
           interaction.reply({ content: `${config.emojis.warning} Music is not paused.`, flags: 64 });
         }
@@ -853,43 +854,55 @@ client.on('interactionCreate', async interaction => {
       case 'resume':
         player.pause(!player.paused);
 
-        // --- FIX: Logic to change the button/emoji after pausing/resuming ---
-        const messageToEdit = player.data.get('currentMessage');
+        // Get the new state for the follow-up message (CUSTOM MESSAGES)
+        const newStateMessage = player.paused ? 
+            `${config.emojis.pause} **This Music Pause Now**` : 
+            `${config.emojis.resume} **This Music Resume Back**`;
+        
+        // Send a temporary follow-up to provide feedback to the user
+        await interaction.followUp({ content: newStateMessage, ephemeral: true });
+
+        // --- Logic to change the button/emoji after pausing/resuming ---
+        const messageToEdit = interaction.message; 
         if (messageToEdit && messageToEdit.editable) {
             
-            // Get existing row (components[0] is the ActionRow holding the buttons)
-            const existingRow = ActionRowBuilder.from(messageToEdit.components[0]);
-            
-            const newComponents = existingRow.components.map(component => {
-                // Check for the pause or resume button
-                if (component.customId === 'pause' || component.customId === 'resume') {
-                    
-                    // After the toggle, check the player's new state
-                    if (player.paused) {
-                        // Player is paused, so the button should now offer to RESUME
-                        return ButtonBuilder.from(component)
-                            .setCustomId('resume')
-                            .setLabel('Resume')
-                            .setStyle(ButtonStyle.Success)
-                            .setEmoji(config.emojis.resume || '▶️');
-                    } else {
-                        // Player is playing, so the button should now offer to PAUSE
-                        return ButtonBuilder.from(component)
-                            .setCustomId('pause')
-                            .setLabel('Pause')
-                            .setStyle(ButtonStyle.Primary)
-                            .setEmoji(config.emojis.pause || '⏸️');
+            // Ensure components exist before trying to read them
+            if (messageToEdit.components && messageToEdit.components[0] && messageToEdit.components[0].components) {
+                
+                // Get existing row (components[0] is the ActionRow holding the buttons)
+                const existingRow = ActionRowBuilder.from(messageToEdit.components[0]);
+                
+                const newComponents = existingRow.components.map(component => {
+                    // Check for the pause or resume button
+                    if (component.customId === 'pause' || component.customId === 'resume') {
+                        
+                        // After the toggle, check the player's new state
+                        if (player.paused) {
+                            // Player is paused, so the button should now offer to RESUME
+                            return ButtonBuilder.from(component)
+                                .setCustomId('resume')
+                                .setLabel('Resume')
+                                .setStyle(ButtonStyle.Success)
+                                .setEmoji(config.emojis.resume || '▶️');
+                        } else {
+                            // Player is playing, so the button should now offer to PAUSE
+                            return ButtonBuilder.from(component)
+                                .setCustomId('pause')
+                                .setLabel('Pause')
+                                .setStyle(ButtonStyle.Primary)
+                                .setEmoji(config.emojis.pause || '⏸️');
+                        }
                     }
-                }
-                // Keep other buttons as they are
-                return ButtonBuilder.from(component);
-            });
-            
-            // Update the message with the new components
-            const updatedRow = new ActionRowBuilder().addComponents(newComponents);
-            await messageToEdit.edit({ components: [updatedRow] }).catch(err => console.error('Error editing message components:', err));
+                    // Keep other buttons as they are
+                    return ButtonBuilder.from(component);
+                });
+                
+                // Update the message with the new components
+                const updatedRow = new ActionRowBuilder().addComponents(newComponents);
+                await messageToEdit.edit({ components: [updatedRow] }).catch(err => console.error('Error editing message components:', err));
+            }
         }
-        // --- END FIX ---
+        // --- END Button Change Logic ---
         break;
       case 'skip':
         if (player.queue.length > 0) {
