@@ -55,16 +55,13 @@ const MUSIC_STOPPED_CHANNEL_ID = '1393633652537163907';
 const BOT_LEFT_SERVER_CHANNEL_ID = '1393633926031085669';
 
 
-// --- NEW RATE-LIMITING GLOBALS FOR VOICE CHANNEL STATUS ---
-const channelStatusDebounce = new Map();
-const DEBOUNCE_TIME_MS = 60000; // 1 minute delay per guild
-// ---------------------------------------------------------
+// --- REMOVED: NEW RATE-LIMITING GLOBALS FOR VOICE CHANNEL STATUS ---
 
 
-// --- HELPER FUNCTION: Activity Status Updater (MODIFIED TO BE STATIC) ---
+// --- HELPER FUNCTION: Activity Status Updater (Static) ---
 /**
- * Updates the bot's activity status based on the player state.
- * MODIFIED to always show the default activity to avoid song title in global status.
+ * Updates the bot's activity status. It is set to always show the default activity 
+ * to ensure the song title does not appear in the bot's global status.
  * @param {Client} client 
  * @param {KazagumoPlayer | null} player 
  */
@@ -79,62 +76,7 @@ function updateActivity(client, player = null) {
 }
 // -----------------------------------------------------
 
-// --- NEW HELPER FUNCTION: Voice Channel Status Updater (Preserved Dynamic Logic) ---
-/**
- * Updates the name of the voice channel the bot is currently in.
- * Includes rate-limiting/debouncing to prevent Discord API crashes.
- * Requires the bot to have the MANAGE_CHANNELS permission.
- * @param {KazagumoPlayer} player 
- * @param {KazagumoTrack | null} track 
- */
-async function updateVoiceChannelStatus(player, track) {
-  const guildId = player.guildId;
-  const now = Date.now();
-  
-  // Rate limit check
-  if (channelStatusDebounce.has(guildId) && (now - channelStatusDebounce.get(guildId)) < DEBOUNCE_TIME_MS) {
-    console.log(`[VC STATUS] Rate limit for guild ${guildId} exceeded. Skipping update.`);
-    return;
-  }
-
-  try {
-    const voiceChannel = client.channels.cache.get(player.voiceId);
-    if (!voiceChannel || voiceChannel.type !== ChannelType.GuildVoice) return;
-
-    const permissions = voiceChannel.permissionsFor(client.user);
-    if (!permissions.has(PermissionFlagsBits.ManageChannels)) {
-      console.warn(`[VC STATUS] Missing Manage Channels permission in ${voiceChannel.name} (${voiceChannel.id}). Skipping update.`);
-      return;
-    }
-    
-    let newChannelName;
-    const emojiMap = config.emojis;
-
-    if (track) {
-      // Name when playing a song
-      const title = track.title.length > 25 ? `${track.title.substring(0, 25)}...` : track.title;
-      const queueLength = player.queue.length;
-      newChannelName = `${emojiMap.nowplaying} ${title} | 📜 ${queueLength}`;
-    } else {
-      // Name when idle or queue ended (but 24/7 is on)
-      newChannelName = `${emojiMap.music} Ready to Play! /play`;
-    }
-
-    // Check if the name needs to be changed to avoid unnecessary API calls
-    if (voiceChannel.name === newChannelName) return;
-
-    // Apply the update
-    await voiceChannel.setName(newChannelName, `Music Status Update: ${newChannelName}`);
-    channelStatusDebounce.set(guildId, now);
-    console.log(`[VC STATUS] Successfully updated channel name in guild ${guildId} to: ${newChannelName}`);
-
-  } catch (error) {
-    // Log error, and set debounce timer even on failure to respect potential hidden rate limits
-    console.error(`[VC STATUS] Error updating voice channel name in guild ${guildId}:`, error);
-    channelStatusDebounce.set(guildId, now);
-  }
-}
-// --------------------------------------------------------------------------------
+// --- REMOVED: Voice Channel Status Updater (updateVoiceChannelStatus) ---
 
 
 // --- FEATURE 1: Song Play Notification ---
@@ -458,9 +400,7 @@ shoukaku.on('debug', (name, info) => console.debug(`Lavalink Node ${name}: Debug
 kazagumo.on('playerCreate', (player) => {
   console.log(`Player created for guild: ${player.guildId}`);
   player.data.set('twentyFourSeven', false); // Initialize 24/7 mode state
-  // --- NEW: Set initial Voice Channel Status ---
-  updateVoiceChannelStatus(player, null).catch(console.error); 
-  // ---------------------------------------------
+  // Removed: Voice Channel Status Update Call
 });
 
 // FIX: Robust playerStart to ensure 'Now Playing' message is sent and handles missing duration
@@ -471,9 +411,7 @@ kazagumo.on('playerStart', async (player, track) => {
   updateActivity(client);
   // -----------------------------------
 
-  // --- NEW: Update Voice Channel Status ---
-  updateVoiceChannelStatus(player, track).catch(console.error);
-  // ----------------------------------------
+  // Removed: Voice Channel Status Update Call
 
   // --- NEW: Call the song play notification function (sends DM and Channel msg) ---
   songPlayNotification(player, track);
@@ -577,8 +515,7 @@ kazagumo.on('playerEnd', async (player) => {
   } else if (player.data.get('twentyFourSeven') && player.queue.length === 0) {
     // --- MODIFIED: Update Activity Status (now only uses default activity) ---
     updateActivity(client);
-    // --- NEW: Update Voice Channel Status to Idle ---
-    updateVoiceChannelStatus(player, null).catch(console.error);
+    // Removed: Voice Channel Status Update Call (when 24/7 is on)
     // ------------------------------------------------
   }
 });
@@ -633,20 +570,7 @@ kazagumo.on('playerDestroy', async (player) => {
   musicStoppedNotification(player.guildId, player.voiceId, reason);
   // --------------------------------------------------------
 
-  // --- NEW: Reset Voice Channel Name to a default 'disconnected' state ---
-  try {
-    const voiceChannel = client.channels.cache.get(player.voiceId);
-    if (voiceChannel && voiceChannel.type === ChannelType.GuildVoice) {
-      const permissions = voiceChannel.permissionsFor(client.user);
-      if (permissions.has(PermissionFlagsBits.ManageChannels)) {
-        await voiceChannel.setName(`${config.emojis.stop} Music Disconnected`, `Music Status Reset on Disconnect`).catch(console.error);
-        channelStatusDebounce.set(player.guildId, Date.now()); // Set timer
-      }
-    }
-  } catch (error) {
-      console.error(`[VC STATUS] Error resetting voice channel name on destroy for guild ${player.guildId}:`, error);
-  }
-  // -----------------------------------------------------------------------
+  // --- REMOVED: Voice Channel Name Reset Logic ---
 
   try {
     const message = player.data.get('currentMessage');
@@ -810,9 +734,7 @@ client.on('interactionCreate', async interaction => {
             .setDescription(`${config.emojis.queue} Added **${searchResult.tracks.length}** tracks from playlist [${searchResult.playlistName}](${query}) to the queue.`)
             .setColor('#0099ff');
           
-          // --- NEW: Update Voice Channel Status after adding queue items ---
-          updateVoiceChannelStatus(player, player.queue.current).catch(console.error);
-          // -----------------------------------------------------------------
+          // Removed: Voice Channel Status Update Call
           return interaction.editReply({ embeds: [playlistEmbed] });
         } else {
           const track = searchResult.tracks[0];
@@ -831,9 +753,7 @@ client.on('interactionCreate', async interaction => {
             .setDescription(`${config.emojis.success} Added [${track.title}](${track.uri}) to the queue at position **#${player.queue.length}**.`)
             .setColor('#00ff00');
           
-          // --- NEW: Update Voice Channel Status after adding queue items ---
-          updateVoiceChannelStatus(player, player.queue.current).catch(console.error);
-          // -----------------------------------------------------------------
+          // Removed: Voice Channel Status Update Call
           return interaction.editReply({ embeds: [addedEmbed] });
         }
       } catch (error) {
@@ -980,10 +900,7 @@ client.on('interactionCreate', async interaction => {
         player.data.set('twentyFourSeven', !current247);
         const newState = player.data.get('twentyFourSeven') ? 'enabled' : 'disabled';
         
-        // If enabling 24/7 and queue is empty, call status update to show 'Ready to Play'
-        if (player.data.get('twentyFourSeven') && player.queue.length === 0) {
-          updateVoiceChannelStatus(player, null).catch(console.error);
-        }
+        // Removed: Voice Channel Status Update Call
 
         interaction.reply({ content: `${config.emojis.success} 24/7 mode is now **${newState}**. The bot will ${newState === 'enabled' ? 'stay in the voice channel.' : 'disconnect when the queue is empty.'}` });
         break;
