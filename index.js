@@ -180,6 +180,7 @@ async function musicStoppedNotification(guildId, voiceId, reason = 'Bot disconne
 client.on('clientReady', () => {
   console.log(`${client.user.tag} is online!`);
 
+  // THIS BLOCK IS NOW SAFE TO RUN BECAUSE 'config.activity' EXISTS
   client.user.setActivity({
     name: config.activity.name,
     type: ActivityType[config.activity.type],
