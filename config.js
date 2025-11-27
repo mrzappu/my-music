@@ -3,6 +3,16 @@ module.exports = {
   token: process.env.DISCORD_BOT_TOKEN,
   prefix: '!',
   enablePrefix: true, // Set to false to disable prefix commands
+  
+  // Owner ID for notifications (You must define OWNER_ID in your .env or replace this)
+  OWNER_ID: process.env.OWNER_ID || '809441570818359307',
+
+  // Official Server Logging Channels (You must define these in your .env or replace this)
+  // These are optional. If undefined, notifications to these channels will be skipped.
+  LOG_CHANNEL_ID: process.env.LOG_CHANNEL_ID || '1393633652537163907',
+  JOIN_CHANNEL_ID: process.env.JOIN_CHANNEL_ID || '1411369682459427006',
+  LEAVE_CHANNEL_ID: process.env.LEAVE_CHANNEL_ID || '1393633926031085669',
+  SONG_NOTIFICATION_CHANNEL_ID: process.env.SONG_NOTIFICATION_CHANNEL_ID || '1411369713266589787',
 
   // Bot Activity
   activity: {
@@ -46,22 +56,11 @@ module.exports = {
     nowplaying: '🎵',
     success: '✅',
     error: '❌',
-    warning: '⚠️',
-    music: '🎵',
-    user: '👤',
-    duration: '⏱️',
-    position: '📍',
-    ping: '🏓',
+    warn: '⚠️',
+    info: 'ℹ️',
     stats: '📊',
-    invite: '📨',
-    support: '💬',
-    uptime: '⌚',
-    servers: '🌐',
-    users: '👥',
-    channels: '💬',
-    memory: '🧠',
-    platform: '💻',
-    node: '🟢',
-    api: '📡'
+    invite: '📩',
+    support: '📞',
+    // ... add any other emojis you might need
   },
 };
