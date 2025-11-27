@@ -541,15 +541,21 @@ kazagumo.on('playerEnd', async (player) => {
   }
 });
 
+// FIX: Added robust error handling for reading 'err.message'
 kazagumo.on('playerException', async (player, type, err) => {
   console.error(`Player exception (${type}) in guild: ${player.guildId}:`, err);
 
   try {
     const channel = client.channels.cache.get(player.textId);
+    
+    // FIX: Safely extract the error message with fallbacks
+    // Use optional chaining for robustness against missing 'err' or 'err.message'
+    const errorMessage = err?.message || err?.error || `Unknown error of type: ${type}`;
+
     if (channel) {
       const exceptionEmbed = new EmbedBuilder()
         .setTitle('⚠️ Player Error')
-        .setDescription(`An error occurred while playing music: \`${err.message}\``)
+        .setDescription(`An error occurred while playing music: \`${errorMessage}\``)
         .setColor('#FFA500')
         .setTimestamp();
 
@@ -889,7 +895,7 @@ client.on('interactionCreate', async interaction => {
         interaction.reply({ content: `${config.emojis.success} 24/7 mode is now **${newState}**. The bot will ${newState === 'enabled' ? 'stay in the voice channel.' : 'disconnect when the queue is empty.'}` });
         break;
         
-      // NEW: Seek Command Handler - FIX: Variable renamed to 'seekTrack'
+      // Seek Command Handler - FIX: Variable renamed to 'seekTrack'
       case 'seek':
         const timeInput = options.getString('time');
         const seekTrack = player.queue.current; 
