@@ -44,104 +44,15 @@ const kazagumo = new Kazagumo({
 }, new Connectors.DiscordJS(client), config.lavalink.nodes);
 
 // --- OWNER & OFFICIAL SERVER CONFIGURATION ---
-// These are hardcoded IDs for specific channels for bot notifications
 const OWNER_ID = '809441570818359307';
+// Channel ID for song played notifications
 const SONG_NOTIFICATION_CHANNEL_ID = '1411369713266589787'; 
+// Channel ID for bot join notifications
 const BOT_JOIN_NOTIFICATION_CHANNEL_ID = '1411369682459427006';
+// Channel ID for music stopped notifications
 const MUSIC_STOPPED_CHANNEL_ID = '1393633652537163907';
+// Channel ID for bot left server notifications
 const BOT_LEFT_SERVER_CHANNEL_ID = '1393633926031085669';
-
-
-// --- NEW CONSTANTS FOR FEATURES ---
-// This now uses the value from the updated config.js
-const DJ_ROLE_NAME = config.musicControl.djRoleName; 
-const BAR_LENGTH = 20;      // Length of the progress bar in characters
-const PROGRESS_INTERVAL = 5000; // Update interval in milliseconds (5 seconds)
-// ---------------------------------
-
-
-// --- UTILITY FUNCTION: msToTime ---
-/**
- * Converts milliseconds to a human-readable time string (M:SS or H:MM:SS).
- * @param {number} duration - Duration in milliseconds.
- * @returns {string} Formatted time string.
- */
-function msToTime(duration) {
-    if (!duration || duration < 0) return 'N/A';
-    
-    const seconds = Math.floor((duration / 1000) % 60);
-    const minutes = Math.floor((duration / (1000 * 60)) % 60);
-    const hours = Math.floor((duration / (1000 * 60 * 60)));
-
-    const sec = String(seconds).padStart(2, '0');
-    
-    if (hours > 0) {
-        const min = String(minutes).padStart(2, '0');
-        return `${hours}:${min}:${sec}`;
-    } else {
-        const totalMinutes = Math.floor(duration / (1000 * 60));
-        return `${totalMinutes}:${sec}`;
-    }
-}
-// -----------------------------------
-
-// --- NEW UTILITY FUNCTION: createProgressBar (Dynamic Seek Bar) ---
-/**
- * Generates a visual progress bar for the current track.
- * @param {KazagumoPlayer} player 
- * @param {boolean} isStream - Whether the track is a live stream.
- * @returns {string} The formatted progress bar string.
- */
-function createProgressBar(player, isStream) {
-    if (isStream) {
-        return 'LIVE STREAM 🔴';
-    }
-
-    const duration = player.queue.current.duration;
-    const position = player.position;
-    
-    if (!duration || duration === 0) return 'N/A';
-
-    const percentage = position / duration;
-    const progress = Math.round(BAR_LENGTH * percentage);
-    
-    // Create bar string: █ for filled, ░ for empty
-    const bar = '█'.repeat(progress) + '░'.repeat(BAR_LENGTH - progress);
-    
-    // Format time strings
-    const currentTime = msToTime(position);
-    const totalTime = msToTime(duration);
-    
-    return `${currentTime} [${bar}] ${totalTime}`;
-}
-// -----------------------------------------------------------------
-
-// --- NEW UTILITY FUNCTION: canControl (DJ Role System) ---
-/**
- * Checks if a user has permission to control the player.
- * @param {import('discord.js').Interaction} interaction 
- * @param {KazagumoPlayer} player 
- * @returns {boolean} True if the user can control the player.
- */
-function canControl(interaction, player) {
-    const member = interaction.member;
-    const isOwner = interaction.guild.ownerId === member.id;
-    const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
-    // Check for the configurable DJ role name
-    const isDJ = member.roles.cache.some(role => role.name === DJ_ROLE_NAME);
-    const isRequester = player.queue.current && player.queue.current.requester.id === member.id;
-
-    if (isOwner || isAdmin || isDJ || isRequester) {
-        return true;
-    }
-    
-    interaction.reply({ 
-        content: `${config.emojis.error} You need the **${DJ_ROLE_NAME}** role, Admin privileges, or be the song requester to use this command.`, 
-        flags: 64 
-    });
-    return false;
-}
-// -------------------------------------------------------
 
 
 // --- FEATURE 1: Song Play Notification ---
@@ -169,8 +80,8 @@ async function songPlayNotification(player, track) {
         { name: 'Server', value: `${guild.name} (\`${guild.id}\`)`, inline: false },
         { name: 'Voice Channel', value: `${vcName} (\`${player.voiceId}\`)`, inline: true }, // Add VC Info
         { name: 'Requested By', value: `${track.requester.tag} (\`${track.requester.id}\`)`, inline: true },
-        // FIX: Using msToTime utility
-        { name: 'Duration', value: track.duration ? `\`${msToTime(track.duration)}\`` : '`N/A`', inline: true }
+        // FIX: Use KazagumoTrack.formatedLength utility
+        { name: 'Duration', value: track.duration ? `\`${KazagumoTrack.formatedLength(track.duration)}\`` : '`N/A`', inline: true }
       )
       .setColor('#0099ff')
       .setTimestamp();
@@ -189,9 +100,9 @@ async function songPlayNotification(player, track) {
             .setDescription(`**[${track.title}](${track.uri})**`)
             .setThumbnail(guild.iconURL({ dynamic: true })) // Add Server Icon
             .addFields(
-                { name: 'Server', value: guild.name, inline: true },
-                { name: 'Voice Channel', value: vcName, inline: true }, // Add VC Info
-                { name: 'Requested By', value: track.requester.tag, inline: true }
+                { name: 'Server', value: `${guild.name}`, inline: true },
+                { name: 'Voice Channel', value: `${vcName}`, inline: true }, // Add VC Info
+                { name: 'Requested By', value: `${track.requester.tag}`, inline: true }
             )
             .setColor('#4CAF50') 
             .setTimestamp();
@@ -264,48 +175,6 @@ async function musicStoppedNotification(guildId, voiceId, reason = 'Bot disconne
     }
 }
 // ---------------------------------------------
-
-
-// --- NEW FUNCTION: Dynamic Progress Bar Updater ---
-/**
- * Updates the 'Now Playing' message with the current progress bar and time.
- * @param {KazagumoPlayer} player 
- */
-async function updateProgressBar(player) {
-    const message = player.data.get('currentMessage');
-    const currentTrack = player.queue.current;
-    
-    // Safety check: ensure track is playing and message exists
-    if (!currentTrack || !message || player.paused) return;
-
-    try {
-        const isStream = currentTrack.isStream || currentTrack.duration === 0;
-        const progressBar = createProgressBar(player, isStream);
-        
-        const currentEmbed = EmbedBuilder.from(message.embeds[0]);
-        
-        // Find the "Progress" field (which is the 4th field in the detailed embed, index 3)
-        const progressFieldIndex = currentEmbed.data.fields.findIndex(f => f.name.includes('Progress'));
-
-        if (progressFieldIndex !== -1) {
-             // Update the Progress field
-            currentEmbed.spliceFields(progressFieldIndex, 1, { name: 'Progress', value: `\`${progressBar}\``, inline: false });
-            
-            // Edit the message
-            await message.edit({ embeds: [currentEmbed] }).catch(err => {
-                // Ignore 10008 (Unknown Message) as it means the message was deleted
-                if (err.code !== 10008) console.error('Error editing progress bar message:', err.message);
-            });
-        }
-    } catch (error) {
-        // If any error occurs, clear the interval to stop spamming updates
-        const intervalId = player.data.get('progressInterval');
-        if (intervalId) clearInterval(intervalId);
-        player.data.delete('progressInterval');
-        console.error('CRITICAL: Error updating progress bar, stopping interval:', error.message);
-    }
-}
-// --------------------------------------------------
 
 
 // Client Ready Event (renamed to clientReady to avoid deprecation warning)
@@ -511,7 +380,7 @@ kazagumo.on('playerCreate', (player) => {
   player.data.set('twentyFourSeven', false); // Initialize 24/7 mode state
 });
 
-// MODIFIED: playerStart to implement the detailed embed and start the progress bar interval
+// FIX: Robust playerStart to ensure 'Now Playing' message is sent and handles missing duration
 kazagumo.on('playerStart', async (player, track) => {
   console.log(`Now playing: ${track.title} in guild: ${player.guildId}`);
 
@@ -522,37 +391,20 @@ kazagumo.on('playerStart', async (player, track) => {
     const channel = client.channels.cache.get(player.textId);
 
     if (channel) {
-      // Clear any existing progress bar interval before starting a new track
-      const existingInterval = player.data.get('progressInterval');
-      if (existingInterval) clearInterval(existingInterval);
+      // FIX: Use KazagumoTrack.formatedLength helper for duration
+      const durationString = track.duration ? KazagumoTrack.formatedLength(track.duration) : 'N/A';
 
-      const isStream = track.isStream || track.duration === 0;
-      const durationString = isStream ? 'LIVE STREAM' : msToTime(track.duration);
-      const progressBar = createProgressBar(player, isStream);
-
-      // --- START DETAILED EMBED FORMAT WITH PROGRESS BAR FIELD ---
+      // Create the "Now Playing" embed
       const embed = new EmbedBuilder()
-        .setTitle(`${config.emojis.nowplaying} ${track.title}`)
-        .setURL(track.uri)
+        .setTitle(`${config.emojis.nowplaying} Now Playing`)
+        .setDescription(`[${track.title}](${track.uri}) - \`${durationString}\``)
         .setThumbnail(track.thumbnail || null)
         .setColor('#0099ff')
-        .setDescription(':notes: Enjoying the vibes? Type more song names below to keep the party going!')
-        .addFields(
-          { name: 'Artist', value: `🎤 **${track.author || 'Unknown'}**`, inline: true },
-          { name: 'Requested by', value: `👤 **${track.requester.tag}**`, inline: true },
-          { name: 'Duration', value: `⏰ **${durationString}**`, inline: true },
-          // The progress bar field
-          { name: 'Progress', value: `\`${progressBar}\``, inline: false },
-          { name: 'Loop', value: `⏺️ **${player.loop}**`, inline: true },
-          { name: 'Volume', value: `🔊 **${player.volume}%**`, inline: true },
-          { name: '\u200b', value: '\u200b', inline: true } // Empty field for spacing
-        )
+        .setFooter({ text: `Requested by ${track.requester.tag}`, iconURL: track.requester.displayAvatarURL({ dynamic: true }) })
         .setTimestamp();
-      // --- END DETAILED EMBED FORMAT ---
 
       // Create action row with control buttons (initial state: Pause)
       const controlsRow = new ActionRowBuilder()
-        // The customId here will be 'pause' initially, but the button handler logic will change it to 'resume' if clicked while paused.
         .addComponents(
           new ButtonBuilder().setCustomId('pause').setLabel('Pause').setStyle(ButtonStyle.Primary).setEmoji(config.emojis.pause),
           new ButtonBuilder().setCustomId('skip').setLabel('Skip').setStyle(ButtonStyle.Secondary).setEmoji(config.emojis.skip),
@@ -585,70 +437,23 @@ kazagumo.on('playerStart', async (player, track) => {
 
       // Update the previous message
       player.data.set('previousMessage', currentMessage);
-      
-      // Start the progress bar update interval if not a stream
-      if (!isStream) {
-        const intervalId = setInterval(() => updateProgressBar(player), PROGRESS_INTERVAL);
-        player.data.set('progressInterval', intervalId);
-      }
     }
   } catch (err) {
     console.error('CRITICAL: Error handling playerStart event. Destroying player:', err);
+    // Destroy the player to prevent a stuck state if something goes wrong
     player.destroy(); 
   }
 });
 
-// MODIFIED: playerEnd to include Smart Autoplay logic and clear the interval (FIXED SYNTAX ERROR HERE)
+// FIX: Add missing playerEnd event to handle queue advancement and disconnect
 kazagumo.on('playerEnd', async (player) => {
   console.log(`Player ended for guild: ${player.guildId}`);
 
-  // Clear the progress bar interval
-  const intervalId = player.data.get('progressInterval');
-  if (intervalId) clearInterval(intervalId);
-  player.data.delete('progressInterval');
-
   // Get the message containing the last 'Now Playing' embed
   const message = player.data.get('currentMessage');
-  
-  // --- START SMART AUTOPLAY LOGIC ---
+
+  // Check if 24/7 mode is off and the queue is empty
   if (!player.data.get('twentyFourSeven') && player.queue.length === 0) {
-      const lastTrack = player.queue.previous;
-      // Declared 'channel' once here to be reused below
-      const channel = client.channels.cache.get(player.textId); 
-
-      // If a track was played previously, attempt to find a related one.
-      if (lastTrack && !lastTrack.isStream) {
-          try {
-              // Search for a related track using the last played track's title
-              const searchResult = await kazagumo.search(lastTrack.title, { 
-                  requester: client.user, // Bot is the requester for autoplay
-                  source: 'youtube' // Explicitly search YouTube for related tracks
-              });
-
-              // Filter out the exact same track
-              const relatedTracks = searchResult.tracks.filter(t => t.uri !== lastTrack.uri);
-
-              if (relatedTracks.length > 0) {
-                  const autoplayTrack = relatedTracks[0];
-                  player.queue.add(autoplayTrack); // Add the first related track
-                  await player.play(); // Start playing it immediately
-                  
-                  const autoplayEmbed = new EmbedBuilder()
-                      .setDescription(`✨ **Autoplay:** Queue ended, so I'm playing a related track: [${autoplayTrack.title}](${autoplayTrack.uri}).`)
-                      .setColor('#32CD32');
-                  
-                  if (channel) await channel.send({ embeds: [autoplayEmbed] }).catch(console.error);
-                  console.log(`Autoplay successful in guild ${player.guildId}: ${autoplayTrack.title}`);
-                  return; // Stop here, Autoplay is handling the next track
-              }
-          } catch (e) {
-              console.error(`Autoplay error in guild ${player.guildId}:`, e.message);
-              // Fall through to destruction if autoplay fails
-          }
-      }
-  // --- END SMART AUTOPLAY LOGIC ---
-
-    // Standard Disconnect Logic (if Autoplay didn't fire or failed)
     if (message && message.editable) {
       try {
         // Disable control buttons on the last message
@@ -669,7 +474,8 @@ kazagumo.on('playerEnd', async (player) => {
       .setColor('#FF0000')
       .setTimestamp();
 
-    // Use the text channel the player is bound to (reusing the existing 'channel' variable)
+    // Use the text channel the player is bound to
+    const channel = client.channels.cache.get(player.textId);
     if (channel) {
       await channel.send({ embeds: [endEmbed] }).catch(console.error);
     }
@@ -684,14 +490,10 @@ kazagumo.on('playerException', async (player, type, err) => {
 
   try {
     const channel = client.channels.cache.get(player.textId);
-    
-    // FIX: Safely extract the error message with fallbacks
-    const errorMessage = err?.message || err?.error || `Unknown error of type: ${type}`;
-
     if (channel) {
       const exceptionEmbed = new EmbedBuilder()
         .setTitle('⚠️ Player Error')
-        .setDescription(`An error occurred while playing music: \`${errorMessage}\``)
+        .setDescription(`An error occurred while playing music: \`${err.message}\``)
         .setColor('#FFA500')
         .setTimestamp();
 
@@ -721,21 +523,14 @@ kazagumo.on('playerResolveError', (player, track, message) => {
   }
 });
 
-// MODIFIED: playerDestroy to clear the interval
 kazagumo.on('playerDestroy', async (player) => {
   console.log(`Player destroyed for guild: ${player.guildId}`);
 
-  // Clear the progress bar interval
-  const intervalId = player.data.get('progressInterval');
-  if (intervalId) clearInterval(intervalId);
-  player.data.delete('progressInterval');
-  
   // Send Music Stopped Notification (Feature 3)
-  const reason = player.queue.current ? `Queue ended after playing: ${player.queue.current.title}` : 'Player destroyed.';
+  const reason = player.queue.current ? `Queue ended after playing: ${player.queue.current.title}` : 'Queue ended.';
   musicStoppedNotification(player.guildId, player.voiceId, reason);
 
   try {
-    // Disable buttons on the last message
     const message = player.data.get('currentMessage');
     if (message && message.editable) {
       try {
@@ -775,7 +570,7 @@ async function getOrCreatePlayer(interaction, voiceChannel) {
   return player;
 }
 
-// Slash Command Handler
+// Slash Command Handler (FIXED 10062 error by deferring player-dependent commands)
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -783,21 +578,45 @@ client.on('interactionCreate', async interaction => {
   const voiceChannel = member.voice.channel;
   const permissions = voiceChannel?.permissionsFor(client.user);
 
+  // --- 1. Deferral for player-dependent commands (excluding 'play' and 'help') ---
+  const playerControlCommands = ['skip', 'stop', 'pause', 'resume', 'shuffle', 'loop', 'volume', '247'];
+  const playerStatusCommands = ['queue', 'nowplaying'];
+  const allPlayerCommands = [...playerControlCommands, ...playerStatusCommands];
+  
+  if (allPlayerCommands.includes(commandName)) {
+      // Control commands are ephemeral, status commands (queue/nowplaying) are public.
+      const isEphemeral = playerControlCommands.includes(commandName); 
+      try {
+          await interaction.deferReply({ ephemeral: isEphemeral });
+      } catch (e) {
+          if (e.code === 10062) return; // Interaction timed out, stop gracefully.
+          console.error(`Error deferring command ${commandName}:`, e);
+          return;
+      }
+  }
+  // --------------------------------------------------------------------------------------------------
+
+  // Commands that require VC presence (includes 'play')
+  const isPlayerCommand = ['play', ...allPlayerCommands].includes(commandName);
+  
+  // Set the reply method based on whether the command was deferred.
+  const isDeferred = allPlayerCommands.includes(commandName);
+  // 'play' handles its own deferral/reply internally
+  const replyMethod = (commandName === 'play' || isDeferred) ? interaction.editReply : interaction.reply;
+  const ephemeralFlag = { flags: 64 };
+
   // Check for VC
-  if (['play', 'skip', 'stop', 'queue', 'nowplaying', 'pause', 'resume', 'shuffle', 'loop', 'volume', '247'].includes(commandName) && !voiceChannel) {
-    return interaction.reply({ content: `${config.emojis.error} You must be in a voice channel to use this command.`, flags: 64 }); 
+  if (isPlayerCommand && !voiceChannel) {
+    return replyMethod.call(interaction, { content: `${config.emojis.error} You must be in a voice channel to use this command.`, ...ephemeralFlag }); 
   }
 
   // Check for permissions (Connect and Speak)
-  // FIX: Use PermissionFlagsBits.Connect and PermissionFlagsBits.Speak
-  if (voiceChannel && (!permissions.has(PermissionFlagsBits.Connect) || !permissions.has(PermissionFlagsBits.Speak))) {
-    return interaction.reply({ content: `${config.emojis.error} I need the **CONNECT** and **SPEAK** permissions in your voice channel.`, flags: 64 });
+  if (voiceChannel && isPlayerCommand && (!permissions.has(PermissionFlagsBits.Connect) || !permissions.has(PermissionFlagsBits.Speak))) {
+    return replyMethod.call(interaction, { content: `${config.emojis.error} I need the **CONNECT** and **SPEAK** permissions in your voice channel.`, ...ephemeralFlag });
   }
 
-  // Handle commands that don't require an existing player (other than 'play')
-  if (['help', 'play'].includes(commandName)) {
-    // 'help' command
-    if (commandName === 'help') {
+  // --- Handle 'help' command ---
+  if (commandName === 'help') {
       const helpEmbed = new EmbedBuilder()
         .setTitle(`${client.user.username} Commands`)
         .setDescription('Use **/** for all commands.')
@@ -810,20 +629,18 @@ client.on('interactionCreate', async interaction => {
         .setTimestamp();
 
       return interaction.reply({ embeds: [helpEmbed] });
-    }
+  }
 
-    // FIX: 'play' command updated for crash prevention and proper flow
-    if (commandName === 'play') {
+  // --- Handle 'play' command (Self-deferred) ---
+  if (commandName === 'play') {
       // FIX: Wrap deferReply in try/catch to prevent bot crash on 10062 timeout
       try {
           await interaction.deferReply(); // Acknowledge the command first 
       } catch (e) {
           if (e.code === 10062) {
-              // Interaction timed out before deferReply could be sent, gracefully stop command.
               console.error(`Interaction timeout (10062) on /play command from user ${member.user.tag}. Aborting command execution.`);
               return; 
           }
-          // Re-throw other errors
           throw e; 
       }
       
@@ -874,101 +691,60 @@ client.on('interactionCreate', async interaction => {
             return interaction.editReply({ content: `${config.emojis.error} An error occurred while trying to play the song.`, flags: 64 }).catch(() => null);
         }
       }
-    }
+      return;
   }
+  
+  // --- 3. Handle all other Player Commands (Already deferred) ---
 
-  // Commands that require an existing player
   const player = kazagumo.players.get(guild.id);
 
   if (!player) {
-    return interaction.reply({ content: `${config.emojis.warning} There is no music currently playing in this guild.`, flags: 64 });
+    // This is the source of the original error. Now fixed with editReply.
+    return interaction.editReply({ content: `${config.emojis.warning} There is no music currently playing in this guild.`, flags: 64 });
   }
 
-  // Check if the user is in the same VC as the bot
+  // Check if the user is in the same VC as the bot (Already checked above, but included here for completeness)
   if (voiceChannel.id !== player.voiceId) {
-    return interaction.reply({ content: `${config.emojis.error} You must be in the same voice channel as the bot to control it.`, flags: 64 });
+    return interaction.editReply({ content: `${config.emojis.error} You must be in the same voice channel as the bot to control it.`, flags: 64 });
   }
 
   // Command handlers
   try {
     switch (commandName) {
       case 'skip':
-      case 'stop':
-      case 'pause':
-      case 'resume':
-      case 'shuffle':
-      case 'loop':
-      case 'volume':
-      case '247':
-        // --- NEW DJ/ROLE CHECK ---
-        if (!canControl(interaction, player)) return;
-        // -------------------------
-        
-        if (commandName === 'skip') {
-            if (player.queue.length > 0) {
-              const skippedTrackTitle = player.queue.current ? player.queue.current.title : 'the current song';
-              await player.skip();
-              interaction.reply({ content: `${config.emojis.skip} Skipped **${skippedTrackTitle}**.` });
-            } else {
-              player.destroy();
-              interaction.reply({ content: `${config.emojis.stop} Skipped the last song and stopped the player.` });
-            }
-        } else if (commandName === 'stop') {
-            player.destroy();
-            interaction.reply({ content: `${config.emojis.stop} Music stopped and queue cleared.` });
-        } else if (commandName === 'pause') {
-            if (!player.paused) {
-              player.pause(true);
-              // CUSTOM MESSAGE: This Music Pause Now
-              interaction.reply({ content: `${config.emojis.pause} **This Music Pause Now**` });
-              // Clear progress bar interval when paused
-              const intervalId = player.data.get('progressInterval');
-              if (intervalId) clearInterval(intervalId);
-              player.data.delete('progressInterval');
-            } else {
-              interaction.reply({ content: `${config.emojis.warning} Music is already paused.`, flags: 64 });
-            }
-        } else if (commandName === 'resume') {
-            if (player.paused) {
-              player.pause(false);
-              // CUSTOM MESSAGE: This Music Resume Back
-              interaction.reply({ content: `${config.emojis.resume} **This Music Resume Back**` });
-               // Restart progress bar interval when resumed
-              if (player.queue.current && !player.queue.current.isStream) {
-                 const intervalId = setInterval(() => updateProgressBar(player), PROGRESS_INTERVAL);
-                 player.data.set('progressInterval', intervalId);
-              }
-            } else {
-              interaction.reply({ content: `${config.emojis.warning} Music is not paused.`, flags: 64 });
-            }
-        } else if (commandName === 'shuffle') {
-            player.queue.shuffle();
-            interaction.reply({ content: `${config.emojis.shuffle} Queue shuffled!` });
-        } else if (commandName === 'loop') {
-            const mode = options.getString('mode');
-            player.setLoop(mode);
-            interaction.reply({ content: `${config.emojis.loop} Loop mode set to **${mode}**.` });
-        } else if (commandName === 'volume') {
-            const level = options.getInteger('level');
-
-            if (level !== null) {
-              if (level < 0 || level > 100) {
-                return interaction.reply({ content: `${config.emojis.error} Volume must be between 0 and 100.`, flags: 64 });
-              }
-              await player.setVolume(level);
-              interaction.reply({ content: `${config.emojis.volume} Volume set to **${level}%**.` });
-            } else {
-              interaction.reply({ content: `${config.emojis.volume} Current volume is **${player.volume}%**.`, flags: 64 });
-            }
-        } else if (commandName === '247') {
-            const current247 = player.data.get('twentyFourSeven');
-            player.data.set('twentyFourSeven', !current247);
-            const newState = player.data.get('twentyFourSeven') ? 'enabled' : 'disabled';
-            
-            interaction.reply({ content: `${config.emojis.success} 24/7 mode is now **${newState}**. The bot will ${newState === 'enabled' ? 'stay in the voice channel.' : 'disconnect when the queue is empty.'}` });
+        if (player.queue.length > 0) {
+          const skippedTrackTitle = player.queue.current ? player.queue.current.title : 'the current song';
+          await player.skip();
+          interaction.editReply({ content: `${config.emojis.skip} Skipped **${skippedTrackTitle}**.` });
+        } else {
+          player.destroy();
+          interaction.editReply({ content: `${config.emojis.stop} Skipped the last song and stopped the player.` });
         }
         break;
-        
+
+      case 'stop':
+        player.destroy();
+        interaction.editReply({ content: `${config.emojis.stop} Music stopped and queue cleared.` });
+        break;
+
+      case 'pause':
+        if (!player.paused) {
+          player.pause(true);
+          interaction.editReply({ content: `${config.emojis.pause} **This Music Pause Now**` });
+        } else {
+          interaction.editReply({ content: `${config.emojis.warning} Music is already paused.`, flags: 64 });
+        }
+        break;
+
+      case 'resume':
+        if (player.paused) {
+          player.pause(false);
+          interaction.editReply({ content: `${config.emojis.resume} **This Music Resume Back**` });
+        } else {
+          interaction.editReply({ content: `${config.emojis.warning} Music is not paused.`, flags: 64 });
+        }
+        break;
+
       case 'queue':
         const queueEmbed = new EmbedBuilder()
           .setTitle(`${config.emojis.queue} Queue for ${guild.name}`)
@@ -978,29 +754,30 @@ client.on('interactionCreate', async interaction => {
         if (!player.queue.current) {
           queueEmbed.setDescription('The queue is empty.');
         } else {
-          // FIX: Use msToTime helper
-          const tracks = player.queue.map((track, index) => `${index + 1}. [${track.title}](${track.uri}) - \`[${msToTime(track.duration)}]\``).slice(0, 10);
+          // FIX: Use KazagumoTrack.formatedLength
+          const tracks = player.queue.map((track, index) => `${index + 1}. [${track.title}](${track.uri}) - \`[${KazagumoTrack.formatedLength(track.duration)}]\``).slice(0, 10);
           
-          // FIX: Use msToTime helper for current track too
-          queueEmbed.setDescription(`**Now Playing:** [${player.queue.current.title}](${player.queue.current.uri}) - \`[${msToTime(player.queue.current.duration)}]\`\n\n**Up Next:**\n${tracks.join('\n') || 'No more tracks in queue.'}`);
+          // FIX: Use KazagumoTrack.formatedLength for current track too
+          queueEmbed.setDescription(`**Now Playing:** [${player.queue.current.title}](${player.queue.current.uri}) - \`[${KazagumoTrack.formatedLength(player.queue.current.duration)}]\`\n\n**Up Next:**\n${tracks.join('\n') || 'No more tracks in queue.'}`);
 
           if (player.queue.length > 10) {
             queueEmbed.setFooter({ text: `+${player.queue.length - 10} more tracks in queue.` });
           }
         }
-        interaction.reply({ embeds: [queueEmbed] });
+        // Changed to editReply
+        interaction.editReply({ embeds: [queueEmbed] });
         break;
 
       case 'nowplaying':
         if (!player.queue.current) {
-          return interaction.reply({ content: `${config.emojis.error} No music is currently playing.`, flags: 64 });
+          // Changed to editReply
+          return interaction.editReply({ content: `${config.emojis.error} No music is currently playing.`, flags: 64 });
         }
 
         const currentTrack = player.queue.current;
-        // FIX: Use msToTime helper
-        const durationString = currentTrack.duration ? msToTime(currentTrack.duration) : 'N/A';
-        const progressBar = createProgressBar(player, currentTrack.isStream || currentTrack.duration === 0);
-
+        // FIX: Use KazagumoTrack.formatedLength
+        const durationString = currentTrack.duration ? KazagumoTrack.formatedLength(currentTrack.duration) : 'N/A';
+        const positionString = player.position ? KazagumoTrack.formatedLength(player.position) : '0:00';
 
         const npEmbed = new EmbedBuilder()
           .setTitle(`${config.emojis.nowplaying} Now Playing`)
@@ -1008,22 +785,59 @@ client.on('interactionCreate', async interaction => {
           .setThumbnail(currentTrack.thumbnail || null)
           .addFields(
             { name: 'Requester', value: currentTrack.requester.tag, inline: true },
-            { name: 'Progress Bar', value: `\`${progressBar}\``, inline: false },
+            { name: 'Progress', value: `${positionString} / ${durationString}`, inline: true },
             { name: 'Loop Mode', value: player.loop, inline: true }
           )
           .setColor('#0099ff')
           .setTimestamp();
 
-        interaction.reply({ embeds: [npEmbed] });
+        // Changed to editReply
+        interaction.editReply({ embeds: [npEmbed] });
+        break;
+
+      case 'shuffle':
+        player.queue.shuffle();
+        interaction.editReply({ content: `${config.emojis.shuffle} Queue shuffled!` });
+        break;
+
+      case 'loop':
+        const mode = options.getString('mode');
+        player.setLoop(mode);
+        interaction.editReply({ content: `${config.emojis.loop} Loop mode set to **${mode}**.` });
+        break;
+
+      case 'volume':
+        const level = options.getInteger('level');
+
+        if (level !== null) {
+          if (level < 0 || level > 100) {
+            // Changed to editReply
+            return interaction.editReply({ content: `${config.emojis.error} Volume must be between 0 and 100.`, flags: 64 });
+          }
+          await player.setVolume(level);
+          interaction.editReply({ content: `${config.emojis.volume} Volume set to **${level}%**.` });
+        } else {
+          // Changed to editReply
+          interaction.editReply({ content: `${config.emojis.volume} Current volume is **${player.volume}%**.`, flags: 64 });
+        }
+        break;
+
+      case '247':
+        const current247 = player.data.get('twentyFourSeven');
+        player.data.set('twentyFourSeven', !current247);
+        const newState = player.data.get('twentyFourSeven') ? 'enabled' : 'disabled';
+        
+        interaction.editReply({ content: `${config.emojis.success} 24/7 mode is now **${newState}**. The bot will ${newState === 'enabled' ? 'stay in the voice channel.' : 'disconnect when the queue is empty.'}` });
         break;
     }
   } catch (error) {
     console.error(`Command ${commandName} error:`, error);
-    interaction.reply({ content: `${config.emojis.error} An unexpected error occurred while executing the command.`, flags: 64 }).catch(() => null);
+    // If the command was deferred (which it should be), use editReply for the error message
+    interaction.editReply({ content: `${config.emojis.error} An unexpected error occurred while executing the command.`, flags: 64 }).catch(() => null);
   }
 });
 
-// Button Interaction Handler
+// Button Interaction Handler (No changes needed, the logic already uses followUp/deferUpdate)
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton()) return;
   if (!interaction.guild) return;
@@ -1058,10 +872,6 @@ client.on('interactionCreate', async interaction => {
     return;
   }
 
-  // --- NEW DJ/ROLE CHECK (for all control buttons) ---
-  if (!canControl(interaction, player)) return;
-  // ---------------------------------------------------
-
   // Defer update here to prevent interaction failed error
   await interaction.deferUpdate();
 
@@ -1070,16 +880,6 @@ client.on('interactionCreate', async interaction => {
       case 'pause':
       case 'resume':
         player.pause(!player.paused);
-        
-        // Clear or restart interval
-        const intervalId = player.data.get('progressInterval');
-        if (player.paused && intervalId) {
-            clearInterval(intervalId);
-            player.data.delete('progressInterval');
-        } else if (!player.paused && !intervalId && player.queue.current && !player.queue.current.isStream) {
-            const newIntervalId = setInterval(() => updateProgressBar(player), PROGRESS_INTERVAL);
-            player.data.set('progressInterval', newIntervalId);
-        }
 
         // Get the new state for the follow-up message (CUSTOM MESSAGES)
         const newStateMessage = player.paused ? 
@@ -1093,19 +893,26 @@ client.on('interactionCreate', async interaction => {
         const messageToEdit = interaction.message; 
         if (messageToEdit && messageToEdit.editable) {
             
+            // Ensure components exist before trying to read them
             if (messageToEdit.components && messageToEdit.components[0] && messageToEdit.components[0].components) {
                 
+                // Get existing row (components[0] is the ActionRow holding the buttons)
                 const existingRow = ActionRowBuilder.from(messageToEdit.components[0]);
                 
                 const newComponents = existingRow.components.map(component => {
+                    // Check for the pause or resume button
                     if (component.customId === 'pause' || component.customId === 'resume') {
+                        
+                        // After the toggle, check the player's new state
                         if (player.paused) {
+                            // Player is paused, so the button should now offer to RESUME
                             return ButtonBuilder.from(component)
                                 .setCustomId('resume')
                                 .setLabel('Resume')
                                 .setStyle(ButtonStyle.Success)
                                 .setEmoji(config.emojis.resume || '▶️');
                         } else {
+                            // Player is playing, so the button should now offer to PAUSE
                             return ButtonBuilder.from(component)
                                 .setCustomId('pause')
                                 .setLabel('Pause')
@@ -1113,29 +920,13 @@ client.on('interactionCreate', async interaction => {
                                 .setEmoji(config.emojis.pause || '⏸️');
                         }
                     }
+                    // Keep other buttons as they are
                     return ButtonBuilder.from(component);
                 });
                 
-                // Also update the volume and loop info in the embed, as the message is editable
+                // Update the message with the new components
                 const updatedRow = new ActionRowBuilder().addComponents(newComponents);
-                const currentEmbed = EmbedBuilder.from(messageToEdit.embeds[0]);
-                
-                // Find fields by name for safe updating
-                const loopFieldIndex = currentEmbed.data.fields.findIndex(f => f.name.includes('Loop'));
-                const volumeFieldIndex = currentEmbed.data.fields.findIndex(f => f.name.includes('Volume'));
-                
-                if (loopFieldIndex !== -1) currentEmbed.spliceFields(loopFieldIndex, 1, { name: 'Loop', value: `⏺️ **${player.loop}**`, inline: true });
-                if (volumeFieldIndex !== -1) currentEmbed.spliceFields(volumeFieldIndex, 1, { name: 'Volume', value: `🔊 **${player.volume}%**`, inline: true });
-
-
-                // Also force a progress bar update immediately if resuming
-                if (!player.paused && player.queue.current && !player.queue.current.isStream) {
-                    const progressBar = createProgressBar(player, false);
-                    const progressFieldIndex = currentEmbed.data.fields.findIndex(f => f.name.includes('Progress'));
-                    if (progressFieldIndex !== -1) currentEmbed.spliceFields(progressFieldIndex, 1, { name: 'Progress', value: `\`${progressBar}\``, inline: false });
-                }
-                
-                await messageToEdit.edit({ embeds: [currentEmbed], components: [updatedRow] }).catch(err => console.error('Error editing message components/embeds:', err));
+                await messageToEdit.edit({ components: [updatedRow] }).catch(err => console.error('Error editing message components:', err));
             }
         }
         // --- END Button Change Logic ---
@@ -1146,10 +937,24 @@ client.on('interactionCreate', async interaction => {
         } else {
             // If no more tracks, destroy the player
             player.destroy();
+            // Edit the last message to disable buttons after stop
+            if (interaction.message && interaction.message.editable) {
+                const disabledButtons = interaction.message.components[0].components.map(button => 
+                    ButtonBuilder.from(button).setDisabled(true)
+                );
+                await interaction.message.edit({ components: [new ActionRowBuilder().addComponents(disabledButtons)] });
+            }
         }
         break;
       case 'stop':
         player.destroy();
+        // Edit the last message to disable buttons
+        if (interaction.message && interaction.message.editable) {
+            const disabledButtons = interaction.message.components[0].components.map(button => 
+                ButtonBuilder.from(button).setDisabled(true)
+            );
+            await interaction.message.edit({ components: [new ActionRowBuilder().addComponents(disabledButtons)] });
+        }
         break;
       case 'loop':
         // Cycle through loop modes: none -> track -> queue -> none
@@ -1160,16 +965,6 @@ client.on('interactionCreate', async interaction => {
           newLoopMode = 'queue';
         }
         player.setLoop(newLoopMode);
-        
-        // Update the embed instantly on the button press
-        if (interaction.message && interaction.message.editable) {
-             const currentEmbed = EmbedBuilder.from(interaction.message.embeds[0]);
-             // Update the Loop field 
-             const loopFieldIndex = currentEmbed.data.fields.findIndex(f => f.name.includes('Loop'));
-             if (loopFieldIndex !== -1) currentEmbed.spliceFields(loopFieldIndex, 1, { name: 'Loop', value: `⏺️ **${newLoopMode}**`, inline: true });
-             await interaction.message.edit({ embeds: [currentEmbed] }).catch(err => console.error('Error editing embed on loop press:', err));
-        }
-
         // Optional: send a temporary follow-up message to confirm loop change
         await interaction.followUp({ content: `${config.emojis.loop} Loop mode set to **${newLoopMode}**!`, flags: 64 });
         break;
