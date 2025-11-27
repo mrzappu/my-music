@@ -5,14 +5,14 @@ module.exports = {
   enablePrefix: true, // Set to false to disable prefix commands
   
   // Owner ID for notifications (You must define OWNER_ID in your .env or replace this)
-  OWNER_ID: process.env.OWNER_ID || 'YOUR_DISCORD_USER_ID',
+  OWNER_ID: process.env.OWNER_ID || '809441570818359307',
 
   // Official Server Logging Channels (You must define these in your .env or replace this)
   // These are optional. If undefined, notifications to these channels will be skipped.
-  LOG_CHANNEL_ID: process.env.LOG_CHANNEL_ID || 'YOUR_BOT_LOG_CHANNEL_ID',
-  JOIN_CHANNEL_ID: process.env.JOIN_CHANNEL_ID || 'YOUR_BOT_JOIN_CHANNEL_ID',
-  LEAVE_CHANNEL_ID: process.env.LEAVE_CHANNEL_ID || 'YOUR_BOT_LEAVE_CHANNEL_ID',
-  SONG_NOTIFICATION_CHANNEL_ID: process.env.SONG_NOTIFICATION_CHANNEL_ID || 'YOUR_SONG_NOTIFICATION_CHANNEL_ID',
+  LOG_CHANNEL_ID: process.env.LOG_CHANNEL_ID || '1393633652537163907',
+  JOIN_CHANNEL_ID: process.env.JOIN_CHANNEL_ID || '1411369682459427006',
+  LEAVE_CHANNEL_ID: process.env.LEAVE_CHANNEL_ID || '1393633926031085669',
+  SONG_NOTIFICATION_CHANNEL_ID: process.env.SONG_NOTIFICATION_CHANNEL_ID || '1411369713266589787',
 
   // Bot Activity
   activity: {
