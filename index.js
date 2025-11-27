@@ -1,7 +1,7 @@
 require('dotenv').config();
 const config = require('./config');
 // ADDED PermissionFlagsBits to imports
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ActivityType, ChannelType, PermissionFlagsBits } = require('discord.js'); 
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ActivityType, StringSelectMenuBuilder, ChannelType, PermissionFlagsBits } = require('discord.js'); 
 
 const express = require('express');
 const app = express();
@@ -53,13 +53,18 @@ const BOT_JOIN_NOTIFICATION_CHANNEL_ID = '1411369682459427006';
 const MUSIC_STOPPED_CHANNEL_ID = '1393633652537163907';
 // Channel ID for bot left server notifications
 const BOT_LEFT_SERVER_CHANNEL_ID = '1393633926031085669';
-// NEW: Lavalink Status Notification Channel ID
-const LAVALINK_STATUS_CHANNEL_ID = '1389121367332622337'; 
+
+
+// --- NEW CONSTANTS FOR FEATURES ---
+const DJ_ROLE_NAME = 'DJ'; // Customizable role name for music control
+const BAR_LENGTH = 20;      // Length of the progress bar in characters
+const PROGRESS_INTERVAL = 5000; // Update interval in milliseconds (5 seconds)
+// ---------------------------------
+
 
 // --- UTILITY FUNCTION: msToTime ---
 /**
  * Converts milliseconds to a human-readable time string (M:SS or H:MM:SS).
- * This replaces the error-prone KazagumoTrack.formatLength.
  * @param {number} duration - Duration in milliseconds.
  * @returns {string} Formatted time string.
  */
@@ -82,50 +87,63 @@ function msToTime(duration) {
 }
 // -----------------------------------
 
-// --- NEW UTILITY FUNCTION: clearBotMessages ---
+// --- NEW UTILITY FUNCTION: createProgressBar (Dynamic Seek Bar) ---
 /**
- * Clears recent bot messages (up to 100) from a specified text channel.
- * This is called when the bot leaves the VC or the music stops.
- * @param {string} channelId - The ID of the text channel.
+ * Generates a visual progress bar for the current track.
+ * @param {KazagumoPlayer} player 
+ * @param {boolean} isStream - Whether the track is a live stream.
+ * @returns {string} The formatted progress bar string.
  */
-async function clearBotMessages(channelId) {
-    const channel = client.channels.cache.get(channelId);
-    if (!channel || !channel.isTextBased()) {
-        console.warn(`Attempted to clear messages in non-text channel or missing channel: ${channelId}`);
-        return;
+function createProgressBar(player, isStream) {
+    if (isStream) {
+        return 'LIVE STREAM 🔴';
     }
 
-    try {
-        // Check for MANAGE_MESSAGES permission
-        const permissions = channel.permissionsFor(client.user);
-        if (!permissions.has(PermissionFlagsBits.ManageMessages)) {
-            console.warn(`Bot lacks MANAGE_MESSAGES permission in channel ${channel.name} to clear messages.`);
-            return;
-        }
+    const duration = player.queue.current.duration;
+    const position = player.position;
+    
+    if (!duration || duration === 0) return 'N/A';
 
-        // Fetch up to 100 recent messages
-        const messages = await channel.messages.fetch({ limit: 100 });
-        
-        // Filter messages sent by the bot
-        const botMessages = messages.filter(m => m.author.id === client.user.id);
-        
-        if (botMessages.size > 0) {
-            // Bulk delete the filtered messages (messages older than 14 days will fail gracefully)
-            await channel.bulkDelete(botMessages, true);
-            console.log(`Successfully cleared ${botMessages.size} bot messages from channel: ${channel.id}`);
-        } else {
-            console.log(`No recent bot messages found to clear in channel: ${channel.id}`);
-        }
-    } catch (error) {
-        // Error code 50034 is for messages older than 14 days which cannot be bulk deleted.
-        if (error.code === 50034) {
-             console.warn(`Failed to bulk delete messages due to age limit (over 14 days old) in channel: ${channelId}`);
-        } else {
-            console.error(`Error clearing bot messages in channel ${channelId}:`, error.message);
-        }
-    }
+    const percentage = position / duration;
+    const progress = Math.round(BAR_LENGTH * percentage);
+    
+    // Create bar string: █ for filled, ░ for empty
+    const bar = '█'.repeat(progress) + '░'.repeat(BAR_LENGTH - progress);
+    
+    // Format time strings
+    const currentTime = msToTime(position);
+    const totalTime = msToTime(duration);
+    
+    return `${currentTime} [${bar}] ${totalTime}`;
 }
-// ----------------------------------------------
+// -----------------------------------------------------------------
+
+// --- NEW UTILITY FUNCTION: canControl (DJ Role System) ---
+/**
+ * Checks if a user has permission to control the player.
+ * @param {import('discord.js').Interaction} interaction 
+ * @param {KazagumoPlayer} player 
+ * @returns {boolean} True if the user can control the player.
+ */
+function canControl(interaction, player) {
+    const member = interaction.member;
+    const isOwner = interaction.guild.ownerId === member.id;
+    const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
+    const isDJ = member.roles.cache.some(role => role.name === DJ_ROLE_NAME);
+    const isRequester = player.queue.current && player.queue.current.requester.id === member.id;
+
+    if (isOwner || isAdmin || isDJ || isRequester) {
+        return true;
+    }
+    
+    interaction.reply({ 
+        content: `${config.emojis.error} You need the **${DJ_ROLE_NAME}** role, Admin privileges, or be the song requester to use this command.`, 
+        flags: 64 
+    });
+    return false;
+}
+// -------------------------------------------------------
+
 
 // --- FEATURE 1: Song Play Notification ---
 /**
@@ -152,7 +170,7 @@ async function songPlayNotification(player, track) {
         { name: 'Server', value: `${guild.name} (\`${guild.id}\`)`, inline: false },
         { name: 'Voice Channel', value: `${vcName} (\`${player.voiceId}\`)`, inline: true }, // Add VC Info
         { name: 'Requested By', value: `${track.requester.tag} (\`${track.requester.id}\`)`, inline: true },
-        // FIX: Using msToTime
+        // FIX: Using msToTime utility
         { name: 'Duration', value: track.duration ? `\`${msToTime(track.duration)}\`` : '`N/A`', inline: true }
       )
       .setColor('#0099ff')
@@ -172,9 +190,9 @@ async function songPlayNotification(player, track) {
             .setDescription(`**[${track.title}](${track.uri})**`)
             .setThumbnail(guild.iconURL({ dynamic: true })) // Add Server Icon
             .addFields(
-                { name: 'Server', value: guild.name, inline: true },
-                { name: 'Voice Channel', value: vcName, inline: true }, // Add VC Info
-                { name: 'Requested By', value: track.requester.tag, inline: true }
+                { name: 'Server', value: `${guild.name}`, inline: true },
+                { name: 'Voice Channel', value: `${vcName}`, inline: true }, // Add VC Info
+                { name: 'Requested By', value: `${track.requester.tag}`, inline: true }
             )
             .setColor('#4CAF50') 
             .setTimestamp();
@@ -248,36 +266,48 @@ async function musicStoppedNotification(guildId, voiceId, reason = 'Bot disconne
 }
 // ---------------------------------------------
 
-// --- NEW FEATURE: Lavalink Status Notification Function ---
-/**
- * Sends a notification to the designated channel when a Lavalink node connects or disconnects.
- * @param {string} name 
- * @param {boolean} isError 
- * @param {string} message 
- */
-async function lavalinkStatusNotification(name, isError, message) {
-    try {
-        const notificationChannel = client.channels.cache.get(LAVALINK_STATUS_CHANNEL_ID);
-        if (!notificationChannel || !notificationChannel.isTextBased()) {
-            console.warn("Lavalink status channel not found or is not a text channel. ID: " + LAVALINK_STATUS_CHANNEL_ID);
-            return;
-        }
 
-        const embed = new EmbedBuilder()
-            .setTitle(isError ? '🚨 Lavalink Node Down' : '✅ Lavalink Node Up')
-            .setDescription(`**Node:** \`${name}\``)
-            .addFields(
-                { name: 'Status', value: message, inline: false }
-            )
-            .setColor(isError ? '#FF0000' : '#00FF00')
-            .setTimestamp();
+// --- NEW FUNCTION: Dynamic Progress Bar Updater ---
+/**
+ * Updates the 'Now Playing' message with the current progress bar and time.
+ * @param {KazagumoPlayer} player 
+ */
+async function updateProgressBar(player) {
+    const message = player.data.get('currentMessage');
+    const currentTrack = player.queue.current;
+    
+    // Safety check: ensure track is playing and message exists
+    if (!currentTrack || !message || player.paused) return;
+
+    try {
+        const isStream = currentTrack.isStream || currentTrack.duration === 0;
+        const progressBar = createProgressBar(player, isStream);
+        
+        const currentEmbed = EmbedBuilder.from(message.embeds[0]);
+        
+        // Find the "Progress" field (which is the 4th field in the detailed embed, index 3)
+        const progressFieldIndex = currentEmbed.data.fields.findIndex(f => f.name.includes('Progress'));
+
+        if (progressFieldIndex !== -1) {
+             // Update the Progress field
+            currentEmbed.spliceFields(progressFieldIndex, 1, { name: 'Progress', value: `\`${progressBar}\``, inline: false });
             
-        await notificationChannel.send({ embeds: [embed] }).catch(err => console.error(`Failed to send Lavalink status message: ${err.message}`));
+            // Edit the message
+            await message.edit({ embeds: [currentEmbed] }).catch(err => {
+                // Ignore 10008 (Unknown Message) as it means the message was deleted
+                if (err.code !== 10008) console.error('Error editing progress bar message:', err.message);
+            });
+        }
     } catch (error) {
-        console.error('Error in lavalinkStatusNotification:', error);
+        // If any error occurs, clear the interval to stop spamming updates
+        const intervalId = player.data.get('progressInterval');
+        if (intervalId) clearInterval(intervalId);
+        player.data.delete('progressInterval');
+        console.error('CRITICAL: Error updating progress bar, stopping interval:', error.message);
     }
 }
-// -----------------------------------------------------
+// --------------------------------------------------
+
 
 // Client Ready Event (renamed to clientReady to avoid deprecation warning)
 client.on('clientReady', () => {
@@ -323,18 +353,6 @@ client.on('clientReady', () => {
           .setMaxValue(100)),
     new SlashCommandBuilder().setName('247').setDescription('Toggles 24/7 mode (keeps bot in VC even when queue ends).'),
     new SlashCommandBuilder().setName('help').setDescription('Shows the list of commands.'),
-    new SlashCommandBuilder().setName('seek').setDescription('Seeks to a specific time in the current track.')
-      .addStringOption(option =>
-        option.setName('time')
-          .setDescription('Time to seek to (e.g., 1:30 or 90s)')
-          .setRequired(true)),
-    // NEW: Remove Command
-    new SlashCommandBuilder().setName('remove').setDescription('Removes a track from the queue by its number.')
-      .addIntegerOption(option =>
-        option.setName('number')
-          .setDescription('The queue number of the track to remove (use /queue).')
-          .setRequired(true)
-          .setMinValue(1)), // Queue numbers start at 1
   ].map(command => command.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(config.token);
@@ -481,25 +499,12 @@ client.on('guildDelete', async (guild) => {
 });
 // --------------------------------------------------------
 
-// --- NEW: Shoukaku (Lavalink) Events with Notification Function ---
-shoukaku.on('ready', (name) => {
-    console.log(`Lavalink Node ${name}: Ready`);
-    lavalinkStatusNotification(name, false, 'Connection successful and node is ready.');
-});
-shoukaku.on('error', (name, error) => {
-    console.error(`Lavalink Node ${name}: Error - ${error.message}`);
-    lavalinkStatusNotification(name, true, `Error: ${error.message}`);
-});
-shoukaku.on('close', (name, code, reason) => {
-    console.warn(`Lavalink Node ${name}: Closed - Code ${code} | Reason: ${reason || 'No reason'}`);
-    lavalinkStatusNotification(name, true, `Connection closed. Code: ${code} | Reason: ${reason || 'Unknown'}`);
-});
-shoukaku.on('disconnect', (name, players) => {
-    console.warn(`Lavalink Node ${name}: Disconnected | Affected players: ${players.size}`);
-    lavalinkStatusNotification(name, true, `Node disconnected. Affected players: ${players.size}.`);
-});
+// Shoukaku (Lavalink) Events
+shoukaku.on('ready', (name) => console.log(`Lavalink Node ${name}: Ready`));
+shoukaku.on('error', (name, error) => console.error(`Lavalink Node ${name}: Error - ${error.message}`));
+shoukaku.on('close', (name, code, reason) => console.warn(`Lavalink Node ${name}: Closed - Code ${code} | Reason: ${reason || 'No reason'}`));
+shoukaku.on('disconnect', (name, players) => console.warn(`Lavalink Node ${name}: Disconnected | Affected players: ${players.size}`));
 shoukaku.on('debug', (name, info) => console.debug(`Lavalink Node ${name}: Debug - ${info}`));
-// ------------------------------------------------------------------
 
 // Kazagumo (Music Player) Events
 kazagumo.on('playerCreate', (player) => {
@@ -507,7 +512,7 @@ kazagumo.on('playerCreate', (player) => {
   player.data.set('twentyFourSeven', false); // Initialize 24/7 mode state
 });
 
-// MODIFIED: playerStart to use the detailed embed format
+// MODIFIED: playerStart to implement the detailed embed and start the progress bar interval
 kazagumo.on('playerStart', async (player, track) => {
   console.log(`Now playing: ${track.title} in guild: ${player.guildId}`);
 
@@ -518,27 +523,33 @@ kazagumo.on('playerStart', async (player, track) => {
     const channel = client.channels.cache.get(player.textId);
 
     if (channel) {
-      // FIX: Using msToTime
-      const durationString = track.duration ? msToTime(track.duration) : 'N/A';
+      // Clear any existing progress bar interval before starting a new track
+      const existingInterval = player.data.get('progressInterval');
+      if (existingInterval) clearInterval(existingInterval);
 
-      // --- START NEW DETAILED EMBED FORMAT ---
+      const isStream = track.isStream || track.duration === 0;
+      const durationString = isStream ? 'LIVE STREAM' : msToTime(track.duration);
+      const progressBar = createProgressBar(player, isStream);
+
+      // --- START DETAILED EMBED FORMAT WITH PROGRESS BAR FIELD ---
       const embed = new EmbedBuilder()
-        .setTitle(`${config.emojis.nowplaying} ${track.title}`) // Use current nowplaying emoji and the song title
-        .setURL(track.uri) // Link the title to the song
+        .setTitle(`${config.emojis.nowplaying} ${track.title}`)
+        .setURL(track.uri)
         .setThumbnail(track.thumbnail || null)
         .setColor('#0099ff')
         .setDescription(':notes: Enjoying the vibes? Type more song names below to keep the party going!')
         .addFields(
-          // Using UNICODE emojis with bold formatting to match the request style
           { name: 'Artist', value: `🎤 **${track.author || 'Unknown'}**`, inline: true },
           { name: 'Requested by', value: `👤 **${track.requester.tag}**`, inline: true },
           { name: 'Duration', value: `⏰ **${durationString}**`, inline: true },
+          // The progress bar field
+          { name: 'Progress', value: `\`${progressBar}\``, inline: false },
           { name: 'Loop', value: `⏺️ **${player.loop}**`, inline: true },
           { name: 'Volume', value: `🔊 **${player.volume}%**`, inline: true },
           { name: '\u200b', value: '\u200b', inline: true } // Empty field for spacing
         )
         .setTimestamp();
-      // --- END NEW DETAILED EMBED FORMAT ---
+      // --- END DETAILED EMBED FORMAT ---
 
       // Create action row with control buttons (initial state: Pause)
       const controlsRow = new ActionRowBuilder()
@@ -574,23 +585,69 @@ kazagumo.on('playerStart', async (player, track) => {
 
       // Update the previous message
       player.data.set('previousMessage', currentMessage);
+      
+      // Start the progress bar update interval if not a stream
+      if (!isStream) {
+        const intervalId = setInterval(() => updateProgressBar(player), PROGRESS_INTERVAL);
+        player.data.set('progressInterval', intervalId);
+      }
     }
   } catch (err) {
     console.error('CRITICAL: Error handling playerStart event. Destroying player:', err);
-    // Destroy the player to prevent a stuck state if something goes wrong
     player.destroy(); 
   }
 });
 
-// FIX: Add missing playerEnd event to handle queue advancement and disconnect
+// MODIFIED: playerEnd to include Smart Autoplay logic and clear the interval
 kazagumo.on('playerEnd', async (player) => {
   console.log(`Player ended for guild: ${player.guildId}`);
 
+  // Clear the progress bar interval
+  const intervalId = player.data.get('progressInterval');
+  if (intervalId) clearInterval(intervalId);
+  player.data.delete('progressInterval');
+
   // Get the message containing the last 'Now Playing' embed
   const message = player.data.get('currentMessage');
-
-  // Check if 24/7 mode is off and the queue is empty
+  
+  // --- START SMART AUTOPLAY LOGIC ---
   if (!player.data.get('twentyFourSeven') && player.queue.length === 0) {
+      const lastTrack = player.queue.previous;
+      const channel = client.channels.cache.get(player.textId);
+
+      // If a track was played previously, attempt to find a related one.
+      if (lastTrack && !lastTrack.isStream) {
+          try {
+              // Search for a related track using the last played track's title
+              const searchResult = await kazagumo.search(lastTrack.title, { 
+                  requester: client.user, // Bot is the requester for autoplay
+                  source: 'youtube' // Explicitly search YouTube for related tracks
+              });
+
+              // Filter out the exact same track
+              const relatedTracks = searchResult.tracks.filter(t => t.uri !== lastTrack.uri);
+
+              if (relatedTracks.length > 0) {
+                  const autoplayTrack = relatedTracks[0];
+                  player.queue.add(autoplayTrack); // Add the first related track
+                  await player.play(); // Start playing it immediately
+                  
+                  const autoplayEmbed = new EmbedBuilder()
+                      .setDescription(`✨ **Autoplay:** Queue ended, so I'm playing a related track: [${autoplayTrack.title}](${autoplayTrack.uri}).`)
+                      .setColor('#32CD32');
+                  
+                  if (channel) await channel.send({ embeds: [autoplayEmbed] }).catch(console.error);
+                  console.log(`Autoplay successful in guild ${player.guildId}: ${autoplayTrack.title}`);
+                  return; // Stop here, Autoplay is handling the next track
+              }
+          } catch (e) {
+              console.error(`Autoplay error in guild ${player.guildId}:`, e.message);
+              // Fall through to destruction if autoplay fails
+          }
+      }
+  // --- END SMART AUTOPLAY LOGIC ---
+
+    // Standard Disconnect Logic (if Autoplay didn't fire or failed)
     if (message && message.editable) {
       try {
         // Disable control buttons on the last message
@@ -622,7 +679,6 @@ kazagumo.on('playerEnd', async (player) => {
   }
 });
 
-// FIX: Added robust error handling for reading 'err.message'
 kazagumo.on('playerException', async (player, type, err) => {
   console.error(`Player exception (${type}) in guild: ${player.guildId}:`, err);
 
@@ -630,7 +686,6 @@ kazagumo.on('playerException', async (player, type, err) => {
     const channel = client.channels.cache.get(player.textId);
     
     // FIX: Safely extract the error message with fallbacks
-    // Use optional chaining for robustness against missing 'err' or 'err.message'
     const errorMessage = err?.message || err?.error || `Unknown error of type: ${type}`;
 
     if (channel) {
@@ -666,25 +721,37 @@ kazagumo.on('playerResolveError', (player, track, message) => {
   }
 });
 
-// MODIFIED: Added call to clearBotMessages(player.textId)
+// MODIFIED: playerDestroy to clear the interval
 kazagumo.on('playerDestroy', async (player) => {
   console.log(`Player destroyed for guild: ${player.guildId}`);
 
+  // Clear the progress bar interval
+  const intervalId = player.data.get('progressInterval');
+  if (intervalId) clearInterval(intervalId);
+  player.data.delete('progressInterval');
+  
   // Send Music Stopped Notification (Feature 3)
-  const reason = player.queue.current ? `Queue ended after playing: ${player.queue.current.title}` : 'Queue ended or bot manually stopped.';
+  const reason = player.queue.current ? `Queue ended after playing: ${player.queue.current.title}` : 'Queue ended.';
   musicStoppedNotification(player.guildId, player.voiceId, reason);
 
-  // --- NEW: Clear Chat Feature (Clears all bot messages) ---
-  // Give Discord a moment for other cleanup to finish, then clear messages.
-  await new Promise(resolve => setTimeout(resolve, 500)); 
-  await clearBotMessages(player.textId);
-  // -----------------------------
-  
-  // Clean up player data
-  player.data.delete('currentMessage');
-  player.data.delete('previousMessage');
-
-  // Removed manual message/button cleanup as clearBotMessages handles it
+  try {
+    // Disable buttons on the last message
+    const message = player.data.get('currentMessage');
+    if (message && message.editable) {
+      try {
+        if (message.components && message.components[0] && message.components[0].components) {
+          const disabledButtons = message.components[0].components.map(button => {
+            return ButtonBuilder.from(button).setDisabled(true);
+          });
+          await message.edit({ components: [new ActionRowBuilder().addComponents(disabledButtons)] });
+        }
+      } catch (error) {
+        console.error('Error disabling buttons in playerDestroy:', error);
+      }
+    }
+  } catch (error) {
+    console.error('Error in playerDestroy message cleanup:', error);
+  }
 });
 
 // Helper function to get or create player
@@ -708,32 +775,6 @@ async function getOrCreatePlayer(interaction, voiceChannel) {
   return player;
 }
 
-// Helper function to convert time string (M:SS or SSs) to milliseconds
-function timeToMilliseconds(timeString) {
-  const parts = timeString.split(':');
-  let milliseconds = 0;
-
-  if (parts.length === 1) {
-    // Format: SSs, e.g., '90s'
-    const secondsMatch = timeString.match(/^(\d+)s$/i);
-    if (secondsMatch) {
-      milliseconds = parseInt(secondsMatch[1]) * 1000;
-    } else {
-      // Assume raw seconds if no 's' is present, e.g., '90'
-      milliseconds = parseInt(timeString) * 1000;
-    }
-  } else if (parts.length === 2) {
-    // Format: M:SS, e.g., '1:30'
-    const minutes = parseInt(parts[0]);
-    const seconds = parseInt(parts[1]);
-    milliseconds = (minutes * 60 + seconds) * 1000;
-  } else {
-    // Invalid format
-    return null;
-  }
-  return milliseconds;
-}
-
 // Slash Command Handler
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
@@ -743,7 +784,7 @@ client.on('interactionCreate', async interaction => {
   const permissions = voiceChannel?.permissionsFor(client.user);
 
   // Check for VC
-  if (['play', 'skip', 'stop', 'queue', 'nowplaying', 'pause', 'resume', 'shuffle', 'loop', 'volume', '247', 'seek', 'remove'].includes(commandName) && !voiceChannel) {
+  if (['play', 'skip', 'stop', 'queue', 'nowplaying', 'pause', 'resume', 'shuffle', 'loop', 'volume', '247'].includes(commandName) && !voiceChannel) {
     return interaction.reply({ content: `${config.emojis.error} You must be in a voice channel to use this command.`, flags: 64 }); 
   }
 
@@ -753,7 +794,7 @@ client.on('interactionCreate', async interaction => {
     return interaction.reply({ content: `${config.emojis.error} I need the **CONNECT** and **SPEAK** permissions in your voice channel.`, flags: 64 });
   }
 
-  // Handle commands that don't require an existing player (other than 'play' and 'help')
+  // Handle commands that don't require an existing player (other than 'play')
   if (['help', 'play'].includes(commandName)) {
     // 'help' command
     if (commandName === 'help') {
@@ -761,7 +802,7 @@ client.on('interactionCreate', async interaction => {
         .setTitle(`${client.user.username} Commands`)
         .setDescription('Use **/** for all commands.')
         .addFields(
-          { name: '🎵 Music Commands', value: '`/play`, `/skip`, `/stop`, `/pause`, `/resume`, `/queue`, `/nowplaying`, `/shuffle`, `/loop`, `/volume`, `/247`, `/seek`, `/remove`' },
+          { name: '🎵 Music Commands', value: '`/play`, `/skip`, `/stop`, `/pause`, `/resume`, `/queue`, `/nowplaying`, `/shuffle`, `/loop`, `/volume`, `/247`' },
           { name: 'ℹ️ Utility', value: '`/help`' }
         )
         .setColor('#00ff00')
@@ -848,47 +889,86 @@ client.on('interactionCreate', async interaction => {
     return interaction.reply({ content: `${config.emojis.error} You must be in the same voice channel as the bot to control it.`, flags: 64 });
   }
 
-
   // Command handlers
   try {
     switch (commandName) {
       case 'skip':
-        if (player.queue.length > 0) {
-          // FIX: Use current track title and check for existence
-          const skippedTrackTitle = player.queue.current ? player.queue.current.title : 'the current song';
-          await player.skip();
-          interaction.reply({ content: `${config.emojis.skip} Skipped **${skippedTrackTitle}**.` });
-        } else {
-          player.destroy();
-          interaction.reply({ content: `${config.emojis.stop} Skipped the last song and stopped the player.` });
-        }
-        break;
-
       case 'stop':
-        player.destroy();
-        interaction.reply({ content: `${config.emojis.stop} Music stopped and queue cleared.` });
-        break;
-
       case 'pause':
-        if (!player.paused) {
-          player.pause(true);
-          // CUSTOM MESSAGE: This Music Pause Now
-          interaction.reply({ content: `${config.emojis.pause} **This Music Pause Now**` });
-        } else {
-          interaction.reply({ content: `${config.emojis.warning} Music is already paused.`, flags: 64 });
-        }
-        break;
-
       case 'resume':
-        if (player.paused) {
-          player.pause(false);
-          // CUSTOM MESSAGE: This Music Resume Back
-          interaction.reply({ content: `${config.emojis.resume} **This Music Resume Back**` });
-        } else {
-          interaction.reply({ content: `${config.emojis.warning} Music is not paused.`, flags: 64 });
+      case 'shuffle':
+      case 'loop':
+      case 'volume':
+      case '247':
+        // --- NEW DJ/ROLE CHECK ---
+        if (!canControl(interaction, player)) return;
+        // -------------------------
+        
+        if (commandName === 'skip') {
+            if (player.queue.length > 0) {
+              const skippedTrackTitle = player.queue.current ? player.queue.current.title : 'the current song';
+              await player.skip();
+              interaction.reply({ content: `${config.emojis.skip} Skipped **${skippedTrackTitle}**.` });
+            } else {
+              player.destroy();
+              interaction.reply({ content: `${config.emojis.stop} Skipped the last song and stopped the player.` });
+            }
+        } else if (commandName === 'stop') {
+            player.destroy();
+            interaction.reply({ content: `${config.emojis.stop} Music stopped and queue cleared.` });
+        } else if (commandName === 'pause') {
+            if (!player.paused) {
+              player.pause(true);
+              // CUSTOM MESSAGE: This Music Pause Now
+              interaction.reply({ content: `${config.emojis.pause} **This Music Pause Now**` });
+              // Clear progress bar interval when paused
+              const intervalId = player.data.get('progressInterval');
+              if (intervalId) clearInterval(intervalId);
+              player.data.delete('progressInterval');
+            } else {
+              interaction.reply({ content: `${config.emojis.warning} Music is already paused.`, flags: 64 });
+            }
+        } else if (commandName === 'resume') {
+            if (player.paused) {
+              player.pause(false);
+              // CUSTOM MESSAGE: This Music Resume Back
+              interaction.reply({ content: `${config.emojis.resume} **This Music Resume Back**` });
+               // Restart progress bar interval when resumed
+              if (player.queue.current && !player.queue.current.isStream) {
+                 const intervalId = setInterval(() => updateProgressBar(player), PROGRESS_INTERVAL);
+                 player.data.set('progressInterval', intervalId);
+              }
+            } else {
+              interaction.reply({ content: `${config.emojis.warning} Music is not paused.`, flags: 64 });
+            }
+        } else if (commandName === 'shuffle') {
+            player.queue.shuffle();
+            interaction.reply({ content: `${config.emojis.shuffle} Queue shuffled!` });
+        } else if (commandName === 'loop') {
+            const mode = options.getString('mode');
+            player.setLoop(mode);
+            interaction.reply({ content: `${config.emojis.loop} Loop mode set to **${mode}**.` });
+        } else if (commandName === 'volume') {
+            const level = options.getInteger('level');
+
+            if (level !== null) {
+              if (level < 0 || level > 100) {
+                return interaction.reply({ content: `${config.emojis.error} Volume must be between 0 and 100.`, flags: 64 });
+              }
+              await player.setVolume(level);
+              interaction.reply({ content: `${config.emojis.volume} Volume set to **${level}%**.` });
+            } else {
+              interaction.reply({ content: `${config.emojis.volume} Current volume is **${player.volume}%**.`, flags: 64 });
+            }
+        } else if (commandName === '247') {
+            const current247 = player.data.get('twentyFourSeven');
+            player.data.set('twentyFourSeven', !current247);
+            const newState = player.data.get('twentyFourSeven') ? 'enabled' : 'disabled';
+            
+            interaction.reply({ content: `${config.emojis.success} 24/7 mode is now **${newState}**. The bot will ${newState === 'enabled' ? 'stay in the voice channel.' : 'disconnect when the queue is empty.'}` });
         }
         break;
-
+        
       case 'queue':
         const queueEmbed = new EmbedBuilder()
           .setTitle(`${config.emojis.queue} Queue for ${guild.name}`)
@@ -898,10 +978,10 @@ client.on('interactionCreate', async interaction => {
         if (!player.queue.current) {
           queueEmbed.setDescription('The queue is empty.');
         } else {
-          // FIX: Using msToTime
+          // FIX: Use msToTime helper
           const tracks = player.queue.map((track, index) => `${index + 1}. [${track.title}](${track.uri}) - \`[${msToTime(track.duration)}]\``).slice(0, 10);
           
-          // FIX: Using msToTime for current track too
+          // FIX: Use msToTime helper for current track too
           queueEmbed.setDescription(`**Now Playing:** [${player.queue.current.title}](${player.queue.current.uri}) - \`[${msToTime(player.queue.current.duration)}]\`\n\n**Up Next:**\n${tracks.join('\n') || 'No more tracks in queue.'}`);
 
           if (player.queue.length > 10) {
@@ -912,16 +992,16 @@ client.on('interactionCreate', async interaction => {
         break;
 
       case 'nowplaying':
-        // Variable is safe here because it's inside a case block
-        const currentTrack = player.queue.current; 
-
-        if (!currentTrack) {
+        if (!player.queue.current) {
           return interaction.reply({ content: `${config.emojis.error} No music is currently playing.`, flags: 64 });
         }
 
-        // FIX: Using msToTime
+        const currentTrack = player.queue.current;
+        // FIX: Use msToTime helper
         const durationString = currentTrack.duration ? msToTime(currentTrack.duration) : 'N/A';
         const positionString = player.position ? msToTime(player.position) : '0:00';
+        const progressBar = createProgressBar(player, currentTrack.isStream || currentTrack.duration === 0);
+
 
         const npEmbed = new EmbedBuilder()
           .setTitle(`${config.emojis.nowplaying} Now Playing`)
@@ -929,106 +1009,13 @@ client.on('interactionCreate', async interaction => {
           .setThumbnail(currentTrack.thumbnail || null)
           .addFields(
             { name: 'Requester', value: currentTrack.requester.tag, inline: true },
-            { name: 'Progress', value: `${positionString} / ${durationString}`, inline: true },
+            { name: 'Progress Bar', value: `\`${progressBar}\``, inline: false },
             { name: 'Loop Mode', value: player.loop, inline: true }
           )
           .setColor('#0099ff')
           .setTimestamp();
 
         interaction.reply({ embeds: [npEmbed] });
-        break;
-
-      case 'shuffle':
-        player.queue.shuffle();
-        interaction.reply({ content: `${config.emojis.shuffle} Queue shuffled!` });
-        break;
-
-      case 'loop':
-        const mode = options.getString('mode');
-        player.setLoop(mode);
-        interaction.reply({ content: `${config.emojis.loop} Loop mode set to **${mode}**.` });
-        break;
-
-      case 'volume':
-        const level = options.getInteger('level');
-
-        if (level !== null) {
-          if (level < 0 || level > 100) {
-            return interaction.reply({ content: `${config.emojis.error} Volume must be between 0 and 100.`, flags: 64 });
-          }
-          await player.setVolume(level);
-          interaction.reply({ content: `${config.emojis.volume} Volume set to **${level}%**.` });
-        } else {
-          interaction.reply({ content: `${config.emojis.volume} Current volume is **${player.volume}%**.`, flags: 64 });
-        }
-        break;
-
-      case '247':
-        const current247 = player.data.get('twentyFourSeven');
-        player.data.set('twentyFourSeven', !current247);
-        const newState = player.data.get('twentyFourSeven') ? 'enabled' : 'disabled';
-        
-        interaction.reply({ content: `${config.emojis.success} 24/7 mode is now **${newState}**. The bot will ${newState === 'enabled' ? 'stay in the voice channel.' : 'disconnect when the queue is empty.'}` });
-        break;
-        
-      // Seek Command Handler 
-      case 'seek':
-        const timeInput = options.getString('time');
-        const seekTrack = player.queue.current; 
-
-        if (!seekTrack || seekTrack.isStream) {
-            return interaction.reply({ content: `${config.emojis.error} Cannot seek on a live stream.`, flags: 64 });
-        }
-        
-        const seekTimeMs = timeToMilliseconds(timeInput);
-        
-        if (seekTimeMs === null || isNaN(seekTimeMs)) {
-            return interaction.reply({ content: `${config.emojis.error} Invalid time format. Use M:SS (e.g., 1:30) or SSs (e.g., 90s).`, flags: 64 });
-        }
-        
-        const totalDurationMs = seekTrack.duration; 
-
-        if (seekTimeMs < 0 || seekTimeMs > totalDurationMs) {
-            // FIX: Using msToTime
-            return interaction.reply({ content: `${config.emojis.error} Seek time must be between 0 and ${msToTime(totalDurationMs)}.`, flags: 64 });
-        }
-
-        await player.seek(seekTimeMs);
-        
-        // FIX: Using msToTime
-        const seekTimeFormatted = msToTime(seekTimeMs);
-        
-        interaction.reply({ content: `${config.emojis.seek} Seeked to **${seekTimeFormatted}** in the track.` });
-        break;
-
-      // NEW: Remove Command Handler
-      case 'remove':
-        const trackNumber = options.getInteger('number');
-        const queueLength = player.queue.length;
-
-        if (queueLength === 0) {
-            return interaction.reply({ content: `${config.emojis.warning} The queue is empty. There are no tracks to remove.`, flags: 64 });
-        }
-
-        // Check if the number is within valid range (1 to queue length)
-        if (trackNumber < 1 || trackNumber > queueLength) {
-            return interaction.reply({ content: `${config.emojis.error} Invalid track number. The queue has ${queueLength} tracks.`, flags: 64 });
-        }
-
-        // trackNumber is 1-based, array index is 0-based.
-        const trackIndex = trackNumber - 1; 
-        
-        // Get the track before splicing it out
-        const trackToRemove = player.queue[trackIndex]; 
-        
-        // Remove the track at the specified index
-        player.queue.splice(trackIndex, 1);
-
-        const removedEmbed = new EmbedBuilder()
-            .setDescription(`${config.emojis.success} Removed track **#${trackNumber}** from the queue: [${trackToRemove.title}](${trackToRemove.uri}).`)
-            .setColor('#FF5733');
-            
-        interaction.reply({ embeds: [removedEmbed] });
         break;
     }
   } catch (error) {
@@ -1072,6 +1059,10 @@ client.on('interactionCreate', async interaction => {
     return;
   }
 
+  // --- NEW DJ/ROLE CHECK (for all control buttons) ---
+  if (!canControl(interaction, player)) return;
+  // ---------------------------------------------------
+
   // Defer update here to prevent interaction failed error
   await interaction.deferUpdate();
 
@@ -1080,6 +1071,16 @@ client.on('interactionCreate', async interaction => {
       case 'pause':
       case 'resume':
         player.pause(!player.paused);
+        
+        // Clear or restart interval
+        const intervalId = player.data.get('progressInterval');
+        if (player.paused && intervalId) {
+            clearInterval(intervalId);
+            player.data.delete('progressInterval');
+        } else if (!player.paused && !intervalId && player.queue.current && !player.queue.current.isStream) {
+            const newIntervalId = setInterval(() => updateProgressBar(player), PROGRESS_INTERVAL);
+            player.data.set('progressInterval', newIntervalId);
+        }
 
         // Get the new state for the follow-up message (CUSTOM MESSAGES)
         const newStateMessage = player.paused ? 
@@ -1093,26 +1094,19 @@ client.on('interactionCreate', async interaction => {
         const messageToEdit = interaction.message; 
         if (messageToEdit && messageToEdit.editable) {
             
-            // Ensure components exist before trying to read them
             if (messageToEdit.components && messageToEdit.components[0] && messageToEdit.components[0].components) {
                 
-                // Get existing row (components[0] is the ActionRow holding the buttons)
                 const existingRow = ActionRowBuilder.from(messageToEdit.components[0]);
                 
                 const newComponents = existingRow.components.map(component => {
-                    // Check for the pause or resume button
                     if (component.customId === 'pause' || component.customId === 'resume') {
-                        
-                        // After the toggle, check the player's new state
                         if (player.paused) {
-                            // Player is paused, so the button should now offer to RESUME
                             return ButtonBuilder.from(component)
                                 .setCustomId('resume')
                                 .setLabel('Resume')
                                 .setStyle(ButtonStyle.Success)
                                 .setEmoji(config.emojis.resume || '▶️');
                         } else {
-                            // Player is playing, so the button should now offer to PAUSE
                             return ButtonBuilder.from(component)
                                 .setCustomId('pause')
                                 .setLabel('Pause')
@@ -1120,19 +1114,28 @@ client.on('interactionCreate', async interaction => {
                                 .setEmoji(config.emojis.pause || '⏸️');
                         }
                     }
-                    // Keep other buttons as they are
                     return ButtonBuilder.from(component);
                 });
                 
-                // Update the message with the new components
-                const updatedRow = new ActionRowBuilder().addComponents(newComponents);
                 // Also update the volume and loop info in the embed, as the message is editable
+                const updatedRow = new ActionRowBuilder().addComponents(newComponents);
                 const currentEmbed = EmbedBuilder.from(messageToEdit.embeds[0]);
                 
-                // Update the specific fields (Volume is always the 5th field (index 4), Loop is the 4th field (index 3))
-                currentEmbed.spliceFields(3, 1, { name: 'Loop', value: `⏺️ **${player.loop}**`, inline: true });
-                currentEmbed.spliceFields(4, 1, { name: 'Volume', value: `🔊 **${player.volume}%**`, inline: true });
+                // Loop is the 5th field (index 4), Volume is the 6th field (index 5)
+                const loopFieldIndex = currentEmbed.data.fields.findIndex(f => f.name.includes('Loop'));
+                const volumeFieldIndex = currentEmbed.data.fields.findIndex(f => f.name.includes('Volume'));
+                
+                if (loopFieldIndex !== -1) currentEmbed.spliceFields(loopFieldIndex, 1, { name: 'Loop', value: `⏺️ **${player.loop}**`, inline: true });
+                if (volumeFieldIndex !== -1) currentEmbed.spliceFields(volumeFieldIndex, 1, { name: 'Volume', value: `🔊 **${player.volume}%**`, inline: true });
 
+
+                // Also force a progress bar update immediately if resuming
+                if (!player.paused && player.queue.current && !player.queue.current.isStream) {
+                    const progressBar = createProgressBar(player, false);
+                    const progressFieldIndex = currentEmbed.data.fields.findIndex(f => f.name.includes('Progress'));
+                    if (progressFieldIndex !== -1) currentEmbed.spliceFields(progressFieldIndex, 1, { name: 'Progress', value: `\`${progressBar}\``, inline: false });
+                }
+                
                 await messageToEdit.edit({ embeds: [currentEmbed], components: [updatedRow] }).catch(err => console.error('Error editing message components/embeds:', err));
             }
         }
@@ -1162,8 +1165,9 @@ client.on('interactionCreate', async interaction => {
         // Update the embed instantly on the button press
         if (interaction.message && interaction.message.editable) {
              const currentEmbed = EmbedBuilder.from(interaction.message.embeds[0]);
-             // Update the Loop field (index 3)
-             currentEmbed.spliceFields(3, 1, { name: 'Loop', value: `⏺️ **${newLoopMode}**`, inline: true });
+             // Update the Loop field 
+             const loopFieldIndex = currentEmbed.data.fields.findIndex(f => f.name.includes('Loop'));
+             if (loopFieldIndex !== -1) currentEmbed.spliceFields(loopFieldIndex, 1, { name: 'Loop', value: `⏺️ **${newLoopMode}**`, inline: true });
              await interaction.message.edit({ embeds: [currentEmbed] }).catch(err => console.error('Error editing embed on loop press:', err));
         }
 
@@ -1181,4 +1185,5 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
+// FIX: Renamed 'ready' to 'clientReady' here as well
 client.login(config.token);
