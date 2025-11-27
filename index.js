@@ -23,7 +23,6 @@ const { Kazagumo, KazagumoTrack } = require('kazagumo');
 const intents = [
   GatewayIntentBits.Guilds,
   GatewayIntentBits.GuildVoiceStates,
-  GatewayIntentBits.MessageContent, // Included for the mention/prefix handler
 ];
 
 // Only add MessageContent intent if prefix commands are enabled
@@ -54,31 +53,6 @@ const MUSIC_STOPPED_CHANNEL_ID = '1393633652537163907';
 // Channel ID for bot left server notifications
 const BOT_LEFT_SERVER_CHANNEL_ID = '1393633926031085669';
 
-
-// --- REMOVED: NEW RATE-LIMITING GLOBALS FOR VOICE CHANNEL STATUS ---
-
-
-// --- HELPER FUNCTION: Activity Status Updater (Static) ---
-/**
- * Updates the bot's activity status. It is set to always show the default activity 
- * to ensure the song title does not appear in the bot's global status.
- * @param {Client} client 
- * @param {KazagumoPlayer | null} player 
- */
-function updateActivity(client, player = null) {
-  const defaultActivity = config.activity;
-  
-  // Always use the default configured activity from config.js
-  client.user.setActivity({
-    name: defaultActivity.name,
-    type: ActivityType[defaultActivity.type],
-  });
-}
-// -----------------------------------------------------
-
-// --- REMOVED: Voice Channel Status Updater (updateVoiceChannelStatus) ---
-
-
 // --- FEATURE 1: Song Play Notification ---
 /**
  * Sends a direct message to the bot owner and a message to the official song notification channel when a track starts playing.
@@ -104,7 +78,7 @@ async function songPlayNotification(player, track) {
         { name: 'Server', value: `${guild.name} (\`${guild.id}\`)`, inline: false },
         { name: 'Voice Channel', value: `${vcName} (\`${player.voiceId}\`)`, inline: true }, // Add VC Info
         { name: 'Requested By', value: `${track.requester.tag} (\`${track.requester.id}\`)`, inline: true },
-        // FIX: Use KazagumoTrack.formatedLength for robust duration formatting
+        // FIX: Using KazagumoTrack.formatedLength helper for duration
         { name: 'Duration', value: track.duration ? `\`${KazagumoTrack.formatedLength(track.duration)}\`` : '`N/A`', inline: true }
       )
       .setColor('#0099ff')
@@ -205,9 +179,11 @@ async function musicStoppedNotification(guildId, voiceId, reason = 'Bot disconne
 client.on('clientReady', () => {
   console.log(`${client.user.tag} is online!`);
 
-  // --- MODIFIED: Initial Activity Setup (using the new helper) ---
-  updateActivity(client);
-  // ---------------------------------------------------------------
+  // Set Static Activity
+  client.user.setActivity({
+    name: config.activity.name,
+    type: ActivityType[config.activity.type],
+  });
 
   // Register Slash Commands
   const commands = [
@@ -400,28 +376,20 @@ shoukaku.on('debug', (name, info) => console.debug(`Lavalink Node ${name}: Debug
 kazagumo.on('playerCreate', (player) => {
   console.log(`Player created for guild: ${player.guildId}`);
   player.data.set('twentyFourSeven', false); // Initialize 24/7 mode state
-  // Removed: Voice Channel Status Update Call
 });
 
 // FIX: Robust playerStart to ensure 'Now Playing' message is sent and handles missing duration
 kazagumo.on('playerStart', async (player, track) => {
   console.log(`Now playing: ${track.title} in guild: ${player.guildId}`);
 
-  // --- MODIFIED: Update Activity Status (now only uses default activity) ---
-  updateActivity(client);
-  // -----------------------------------
-
-  // Removed: Voice Channel Status Update Call
-
-  // --- NEW: Call the song play notification function (sends DM and Channel msg) ---
+  // Call the song play notification function (sends DM and Channel msg)
   songPlayNotification(player, track);
-  // -------------------------------------------------------------------------------
 
   try {
     const channel = client.channels.cache.get(player.textId);
 
     if (channel) {
-      // FIX APPLIED: Safely check for track duration using the Kazagumo helper
+      // Safely check for track duration
       const durationString = track.duration ? KazagumoTrack.formatedLength(track.duration) : 'N/A';
 
       // Create the "Now Playing" embed
@@ -433,7 +401,7 @@ kazagumo.on('playerStart', async (player, track) => {
         .setFooter({ text: `Requested by ${track.requester.tag}`, iconURL: track.requester.displayAvatarURL({ dynamic: true }) })
         .setTimestamp();
 
-      // Create action row with control buttons
+      // Create action row with control buttons (initial state: Pause)
       const controlsRow = new ActionRowBuilder()
         .addComponents(
           new ButtonBuilder().setCustomId('pause').setLabel('Pause').setStyle(ButtonStyle.Primary).setEmoji(config.emojis.pause),
@@ -512,11 +480,6 @@ kazagumo.on('playerEnd', async (player) => {
 
     // Destroy the player, which disconnects the bot from the voice channel
     player.destroy();
-  } else if (player.data.get('twentyFourSeven') && player.queue.length === 0) {
-    // --- MODIFIED: Update Activity Status (now only uses default activity) ---
-    updateActivity(client);
-    // Removed: Voice Channel Status Update Call (when 24/7 is on)
-    // ------------------------------------------------
   }
 });
 
@@ -561,16 +524,9 @@ kazagumo.on('playerResolveError', (player, track, message) => {
 kazagumo.on('playerDestroy', async (player) => {
   console.log(`Player destroyed for guild: ${player.guildId}`);
 
-  // --- MODIFIED: Reset Activity Status (now only uses default activity) ---
-  updateActivity(client);
-  // ----------------------------------
-
-  // --- NEW: Send Music Stopped Notification (Feature 3) ---
+  // Send Music Stopped Notification
   const reason = player.queue.current ? `Queue ended after playing: ${player.queue.current.title}` : 'Queue ended.';
   musicStoppedNotification(player.guildId, player.voiceId, reason);
-  // --------------------------------------------------------
-
-  // --- REMOVED: Voice Channel Name Reset Logic ---
 
   try {
     const message = player.data.get('currentMessage');
@@ -594,12 +550,6 @@ kazagumo.on('playerDestroy', async (player) => {
 // Helper function to get or create player
 async function getOrCreatePlayer(interaction, voiceChannel) {
   let player = kazagumo.players.get(interaction.guildId);
-
-  // FIX: Added Permission Check
-  const permissions = voiceChannel.permissionsFor(interaction.guild.members.me);
-  if (!permissions.has(PermissionFlagsBits.Connect) || !permissions.has(PermissionFlagsBits.Speak)) {
-    throw new Error("Missing Connect or Speak permissions.");
-  }
 
   if (!player) {
     player = await kazagumo.createPlayer({
@@ -627,13 +577,12 @@ client.on('interactionCreate', async interaction => {
   const permissions = voiceChannel?.permissionsFor(client.user);
 
   // Check for VC
-  // Using flags: 64 for MessageFlags.Ephemeral
   if (['play', 'skip', 'stop', 'queue', 'nowplaying', 'pause', 'resume', 'shuffle', 'loop', 'volume', '247'].includes(commandName) && !voiceChannel) {
     return interaction.reply({ content: `${config.emojis.error} You must be in a voice channel to use this command.`, flags: 64 }); 
   }
 
   // Check for permissions (Connect and Speak)
-  if (voiceChannel && (!permissions.has('Connect') || !permissions.has('Speak'))) {
+  if (voiceChannel && (!permissions.has(PermissionFlagsBits.Connect) || !permissions.has(PermissionFlagsBits.Speak))) {
     return interaction.reply({ content: `${config.emojis.error} I need the **CONNECT** and **SPEAK** permissions in your voice channel.`, flags: 64 });
   }
 
@@ -641,79 +590,26 @@ client.on('interactionCreate', async interaction => {
   if (['help', 'play'].includes(commandName)) {
     // 'help' command
     if (commandName === 'help') {
-      
       const helpEmbed = new EmbedBuilder()
-        .setTitle(`🎶 ${client.user.username} Commands`)
-        .setDescription(`Hello! I'm **${client.user.username}**, a powerful music bot.\nUse the **select menu below** or type **/** to see all commands.`)
+        .setTitle(`${client.user.username} Commands`)
+        .setDescription('Use **/** for all commands.')
         .addFields(
-          { name: `${config.emojis.nowplaying} Playback`, value: '`/play`, `/skip`, `/stop`, `/pause`, `/resume`, `/volume`', inline: true },
-          { name: `${config.emojis.queue} Queue & Features`, value: '`/queue`, `/shuffle`, `/loop`, `/247`', inline: true }
+          { name: '🎵 Music Commands', value: '`/play`, `/skip`, `/stop`, `/pause`, `/resume`, `/queue`, `/nowplaying`, `/shuffle`, `/loop`, `/volume`, `/247`' },
+          { name: 'ℹ️ Utility', value: '`/help`' }
         )
         .setColor('#00ff00')
         .setFooter({ text: `Developed by Rick_Grimes | Support: ${config.support.server}`, iconURL: client.user.displayAvatarURL({ dynamic: true }) })
         .setTimestamp();
-        
-      // --- NEW: Select Menu Implementation ---
-      const selectMenu = new StringSelectMenuBuilder()
-        .setCustomId('help_select_command')
-        .setPlaceholder('Select a command to learn more...')
-        .addOptions([
-            {
-                label: 'Play Music (/play)',
-                description: 'Start playback of a song or playlist.',
-                emoji: config.emojis.play,
-                value: 'play',
-            },
-            {
-                label: 'Stop Player (/stop)',
-                description: 'Stop the music and clear the queue.',
-                emoji: config.emojis.stop,
-                value: 'stop',
-            },
-            {
-                label: 'Skip Song (/skip)',
-                description: 'Skip the current track.',
-                emoji: config.emojis.skip,
-                value: 'skip',
-            },
-            {
-                label: 'Loop Mode (/loop)',
-                description: 'Change the queue loop mode (off/track/queue).',
-                emoji: config.emojis.loop,
-                value: 'loop',
-            },
-            {
-                label: 'Volume Control (/volume)',
-                description: 'Adjust the bot\'s volume.',
-                emoji: config.emojis.volume,
-                value: 'volume',
-            },
-        ]);
-        
-      const actionRow = new ActionRowBuilder().addComponents(selectMenu);
 
-      return interaction.reply({ embeds: [helpEmbed], components: [actionRow] });
+      return interaction.reply({ embeds: [helpEmbed] });
     }
 
-    // FIX: 'play' command updated for proper flow and response
+    // 'play' command
     if (commandName === 'play') {
-      // --- FIX FOR ERROR 10062: Unknown interaction timeout ---
-      try {
-        await interaction.deferReply(); // Acknowledge the command first 
-      } catch (e) {
-        // If deferReply fails with code 10062, it means the interaction timed out.
-        if (e.code === 10062) {
-          console.error(`Interaction timeout (10062) on /play command from user ${member.user.tag} in guild ${guild.name}. Aborting command.`);
-          return; // Stop execution to prevent further failed interaction responses
-        }
-        throw e; // Re-throw other errors
-      }
-      // --------------------------------------------------------
-
+      await interaction.deferReply(); // Acknowledge the command first 
       const query = options.getString('query');
 
       try {
-        // Includes the permission check inside getOrCreatePlayer
         const player = await getOrCreatePlayer(interaction, voiceChannel);
         const searchResult = await kazagumo.search(query, { requester: member.user });
 
@@ -733,8 +629,6 @@ client.on('interactionCreate', async interaction => {
           const playlistEmbed = new EmbedBuilder()
             .setDescription(`${config.emojis.queue} Added **${searchResult.tracks.length}** tracks from playlist [${searchResult.playlistName}](${query}) to the queue.`)
             .setColor('#0099ff');
-          
-          // Removed: Voice Channel Status Update Call
           return interaction.editReply({ embeds: [playlistEmbed] });
         } else {
           const track = searchResult.tracks[0];
@@ -742,7 +636,6 @@ client.on('interactionCreate', async interaction => {
 
           if (!isPlaying) {
             await player.play(); // Start playing if nothing is active
-            // NOTE: The 'Now Playing' message will be sent by the 'playerStart' event
             const startingEmbed = new EmbedBuilder()
                 .setDescription(`${config.emojis.success} Starting playback of **${track.title}**!`)
                 .setColor('#00ff00');
@@ -752,16 +645,11 @@ client.on('interactionCreate', async interaction => {
           const addedEmbed = new EmbedBuilder()
             .setDescription(`${config.emojis.success} Added [${track.title}](${track.uri}) to the queue at position **#${player.queue.length}**.`)
             .setColor('#00ff00');
-          
-          // Removed: Voice Channel Status Update Call
           return interaction.editReply({ embeds: [addedEmbed] });
         }
       } catch (error) {
-        if (error.message === "Missing Connect or Speak permissions.") {
-            return interaction.editReply({ content: `${config.emojis.error} I need the **CONNECT** and **SPEAK** permissions in your voice channel.`, flags: 64 });
-        }
         console.error('Play command error:', error);
-        // Only attempt editReply if deferReply succeeded. The 10062 error is already handled above.
+        // Only attempt editReply if deferReply succeeded
         if (interaction.deferred || interaction.replied) {
             return interaction.editReply({ content: `${config.emojis.error} An error occurred while trying to play the song.`, flags: 64 }).catch(() => null);
         }
@@ -787,12 +675,9 @@ client.on('interactionCreate', async interaction => {
     switch (commandName) {
       case 'skip':
         if (player.queue.length > 0) {
-          // Skip will automatically call playerStart for the next track
           await player.skip();
-          // The title is already for the next song, but user expects acknowledgement for the skipped one.
           interaction.reply({ content: `${config.emojis.skip} Skipped the current song.` });
         } else {
-          // If queue is empty, destroy the player
           player.destroy();
           interaction.reply({ content: `${config.emojis.stop} Skipped the last song and stopped the player.` });
         }
@@ -826,8 +711,6 @@ client.on('interactionCreate', async interaction => {
           .setTitle(`${config.emojis.queue} Queue for ${guild.name}`)
           .setColor('#0099ff')
           .setTimestamp();
-        
-        const currentQueueLength = player.queue.length;
 
         if (!player.queue.current) {
           queueEmbed.setDescription('The queue is empty.');
@@ -838,14 +721,13 @@ client.on('interactionCreate', async interaction => {
           // FIX: Use KazagumoTrack.formatedLength for current track too
           queueEmbed.setDescription(`**Now Playing:** [${player.queue.current.title}](${player.queue.current.uri}) - \`[${KazagumoTrack.formatedLength(player.queue.current.duration)}]\`\n\n**Up Next:**\n${tracks.join('\n') || 'No more tracks in queue.'}`);
 
-          if (currentQueueLength > 10) {
-            queueEmbed.setFooter({ text: `+${currentQueueLength - 10} more tracks in queue.` });
+          if (player.queue.length > 10) {
+            queueEmbed.setFooter({ text: `+${player.queue.length - 10} more tracks in queue.` });
           }
         }
         interaction.reply({ embeds: [queueEmbed] });
         break;
 
-      // FIX: 'nowplaying' command updated to safely check for duration format
       case 'nowplaying':
         if (!player.queue.current) {
           return interaction.reply({ content: `${config.emojis.error} No music is currently playing.`, flags: 64 });
@@ -900,8 +782,6 @@ client.on('interactionCreate', async interaction => {
         player.data.set('twentyFourSeven', !current247);
         const newState = player.data.get('twentyFourSeven') ? 'enabled' : 'disabled';
         
-        // Removed: Voice Channel Status Update Call
-
         interaction.reply({ content: `${config.emojis.success} 24/7 mode is now **${newState}**. The bot will ${newState === 'enabled' ? 'stay in the voice channel.' : 'disconnect when the queue is empty.'}` });
         break;
     }
@@ -917,14 +797,12 @@ client.on('interactionCreate', async interaction => {
   if (!interaction.guild) return;
 
   const player = kazagumo.players.get(interaction.guildId);
-  const member = interaction.member;
   
   // Helper function to safely reply and handle 10062 timeout errors
   const handleTimeoutReply = async (content) => {
     try {
         await interaction.reply({ content, flags: 64 });
     } catch (e) {
-        // Fix for the 10062 error that was causing crashes
         if (e.code === 10062) {
             console.error(`Interaction timeout (10062) on button check reply from user ${interaction.user.tag} in guild ${interaction.guild.name}. Aborting command.`);
             return true; // Indicate that the error was handled
@@ -940,13 +818,15 @@ client.on('interactionCreate', async interaction => {
     return;
   }
 
+  const member = interaction.member;
+
   // 2. Voice channel check
   if (!member.voice.channel || member.voice.channel.id !== player.voiceId) {
     if (await handleTimeoutReply(`${config.emojis.error} You must be in the same voice channel as the bot to use the controls.`)) return;
     return;
   }
-  
-  // Defer only if initial checks pass
+
+  // Defer update here to prevent interaction failed error
   await interaction.deferUpdate();
 
   try {
@@ -954,6 +834,44 @@ client.on('interactionCreate', async interaction => {
       case 'pause':
       case 'resume':
         player.pause(!player.paused);
+
+        // --- FIX: Logic to change the button/emoji after pausing/resuming ---
+        const messageToEdit = player.data.get('currentMessage');
+        if (messageToEdit && messageToEdit.editable) {
+            
+            // Get existing row (components[0] is the ActionRow holding the buttons)
+            const existingRow = ActionRowBuilder.from(messageToEdit.components[0]);
+            
+            const newComponents = existingRow.components.map(component => {
+                // Check for the pause or resume button
+                if (component.customId === 'pause' || component.customId === 'resume') {
+                    
+                    // After the toggle, check the player's new state
+                    if (player.paused) {
+                        // Player is paused, so the button should now offer to RESUME
+                        return ButtonBuilder.from(component)
+                            .setCustomId('resume')
+                            .setLabel('Resume')
+                            .setStyle(ButtonStyle.Success)
+                            .setEmoji(config.emojis.resume || '▶️');
+                    } else {
+                        // Player is playing, so the button should now offer to PAUSE
+                        return ButtonBuilder.from(component)
+                            .setCustomId('pause')
+                            .setLabel('Pause')
+                            .setStyle(ButtonStyle.Primary)
+                            .setEmoji(config.emojis.pause || '⏸️');
+                    }
+                }
+                // Keep other buttons as they are
+                return ButtonBuilder.from(component);
+            });
+            
+            // Update the message with the new components
+            const updatedRow = new ActionRowBuilder().addComponents(newComponents);
+            await messageToEdit.edit({ components: [updatedRow] }).catch(err => console.error('Error editing message components:', err));
+        }
+        // --- END FIX ---
         break;
       case 'skip':
         if (player.queue.length > 0) {
@@ -998,69 +916,8 @@ client.on('interactionCreate', async interaction => {
         break;
     }
   } catch (error) {
-    console.error('Button interaction switch error:', error);
+    console.error('Button interaction error:', error);
     await interaction.followUp({ content: `${config.emojis.error} An error occurred while processing your request.`, flags: 64 });
-  }
-});
-
-// --- NEW: Bot Mention Handler (About Bot Feature) ---
-client.on('messageCreate', async message => {
-  // Ignore messages from bots, system messages, or if the bot wasn't mentioned
-  if (message.author.bot || !message.mentions.has(client.user.id) || message.type !== 0) return;
-  
-  // Ensure the message only contains the bot mention and optional whitespace
-  const mentionRegex = new RegExp(`^<@!?${client.user.id}>\\s*$`);
-  if (!mentionRegex.test(message.content)) return;
-
-  try {
-    // 1. Construct the Embed
-    const aboutEmbed = new EmbedBuilder()
-      .setTitle(`👋 Hello! I am ${client.user.username}.`)
-      .setDescription(`I am a powerful, feature-rich Discord music bot.\n\nUse the **/** command to see all my features, or click the buttons below!`) // MODIFIED DESCRIPTION
-      .setThumbnail(client.user.displayAvatarURL({ dynamic: true }))
-      .addFields(
-        { name: `🌐 Servers`, value: `\`${client.guilds.cache.size}\``, inline: true }, // Used standard emoji
-        { name: `👥 Users`, value: `\`${client.users.cache.size}\``, inline: true }, // Used standard emoji
-        { name: `🎵 Developer`, value: '`Rick_Grimes`', inline: true }, // Used standard emoji
-        // REMOVED LAVALINK NODE FIELD
-      )
-      .setColor('#00FFFF')
-      .setFooter({ text: 'Thank you for choosing me!', iconURL: client.user.displayAvatarURL({ dynamic: true }) })
-      .setTimestamp();
-      
-    // 2. Construct the Buttons (ActionRow)
-    // NOTE: This invite URL uses standard permissions for music bots (view channels, connect, speak, use slash commands)
-    const inviteURL = `https://discord.com/api/oauth2/authorize?client_id=${client.user.id}&permissions=2184325888&scope=bot%20applications.commands`;
-    const supportURL = config.support.server;
-    const websiteURL = 'https://www.infinitymusic.com/placeholder'; // Placeholder URL
-
-    const buttonsRow = new ActionRowBuilder()
-      .addComponents(
-        new ButtonBuilder()
-          .setLabel('Invite Me')
-          .setStyle(ButtonStyle.Link)
-          .setURL(inviteURL)
-          .setEmoji(config.emojis.invite || '📨'),
-        new ButtonBuilder()
-          .setLabel('Support Server')
-          .setStyle(ButtonStyle.Link)
-          .setURL(supportURL)
-          .setEmoji(config.emojis.support || '💬'),
-        new ButtonBuilder()
-          .setLabel('Website')
-          .setStyle(ButtonStyle.Link)
-          .setURL(websiteURL)
-          .setEmoji('🌐'),
-      );
-
-    // 3. Send the Reply
-    await message.reply({ 
-      embeds: [aboutEmbed], 
-      components: [buttonsRow] 
-    });
-
-  } catch (error) {
-    console.error('Error handling bot mention:', error);
   }
 });
 
