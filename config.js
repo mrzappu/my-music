@@ -2,39 +2,28 @@ module.exports = {
   // Bot Configuration
   token: process.env.DISCORD_BOT_TOKEN,
   prefix: '!',
-  enablePrefix: true, // Set to false to disable prefix commands
+  enablePrefix: true, 
   
   // Owner ID for notifications (You must define OWNER_ID in your .env or replace this)
   OWNER_ID: process.env.OWNER_ID || '809441570818359307',
 
-  // Official Server Logging Channels (You must define these in your .env or replace this)
-  // These are optional. If undefined, notifications to these channels will be skipped.
-  LOG_CHANNEL_ID: process.env.LOG_CHANNEL_ID || '1393633652537163907',
-  JOIN_CHANNEL_ID: process.env.JOIN_CHANNEL_ID || '1411369682459427006',
-  LEAVE_CHANNEL_ID: process.env.LEAVE_CHANNEL_ID || '1393633926031085669',
-  SONG_NOTIFICATION_CHANNEL_ID: process.env.SONG_NOTIFICATION_CHANNEL_ID || '1411369713266589787',
-
-  // Bot Activity
-  activity: {
-    name: 'INFINITY MUSIC',
-    type: 'LISTENING' // PLAYING, STREAMING, LISTENING, WATCHING, COMPETING
-  },
-
   // Lavalink Configuration
+  // NOTE: Your previous error log showed an 'Unhandled error' for 'Harmonix-NODE2'.
+  // Please ensure your Lavalink server details (URL, Port, Auth) are correct and the server is running.
   lavalink: {
     nodes: [{
-      name: 'Harmonix-NODE2', // Updated Node Name
-      url: 'zac.hidencloud.com:24627', // New Host and Port
-      auth: 'Kaun.Yuvraj', // New Password
-      secure: false, // Set to false for this connection
+      name: 'Harmonix-NODE2', 
+      url: 'zac.hidencloud.com:24627', 
+      auth: 'Kaun.Yuvraj', 
+      secure: false, 
     }],
     defaultSearchEngine: 'youtube_music'
   },
 
   // Hosting Configuration
   express: {
-    port: 3000, // Default port for local testing
-    host: '0.0.0.0', // Listen on all interfaces
+    port: 3000, 
+    host: '0.0.0.0', 
   },
   
   // Support Server Link
@@ -42,12 +31,12 @@ module.exports = {
     server: process.env.SUPPORT_SERVER || 'https://discord.gg/your-support-server-invite'
   },
 
-  // Emojis - REPLACE 'YOUR_EMOJI_ID' with the actual IDs of your animated emojis
+  // Emojis - ALL EMOJI IDs HAVE BEEN ADDED
   emojis: {
-    // Animated Music Emojis (Replace the IDs)
+    // Animated Music Emojis (Your custom IDs are used here)
     play: '<a:play:1443619986907336785>',
     pause: '<a:pause:1443620907233837066>',
-    resume: '<a:resume:1443619986907336785>',
+    resume: '<a:resume:1443619986907336785>', // Same as play, as requested
     skip: '<a:skip:1443619983409287221>',
     stop: '<a:stop:1443619980859015354>',
     loop: '<a:loop:1443619976400343100>',
@@ -55,17 +44,15 @@ module.exports = {
     nowplaying: '<a:np:1443621459057578005>',
     queue: '<a:queue:1443622469423464549>',
     shuffle: '<a:shuffle:1443619973216862461>',
-    seek: '<a:seek:1393210917755424789>',
-    remove: '<a:remove:1443622707873976411>',
-    clear: '<a:clear:1443622995359694849>',
+    seek: '<a:seek:1393210917755424789>', 
+    remove: '<a:remove:1443622707873976411>', 
+    clear: '<a:clear:1443622995359694849>', 
     
-    // Standard Utility/Status Emojis (You can change these too if you have animated ones)
+    // Standard Utility/Status Emojis (Kept standard for compatibility)
     success: '✅',
     error: '❌',
     warn: '⚠️',
     info: 'ℹ️',
-    stats: '📊',
-    invite: '📩',
-    support: '📞',
+    warning: '⚠️',
   },
 };
