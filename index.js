@@ -44,19 +44,17 @@ const kazagumo = new Kazagumo({
 }, new Connectors.DiscordJS(client), config.lavalink.nodes);
 
 // --- OWNER & OFFICIAL SERVER CONFIGURATION ---
+// These are hardcoded IDs for specific channels for bot notifications
 const OWNER_ID = '809441570818359307';
-// Channel ID for song played notifications
 const SONG_NOTIFICATION_CHANNEL_ID = '1411369713266589787'; 
-// Channel ID for bot join notifications
 const BOT_JOIN_NOTIFICATION_CHANNEL_ID = '1411369682459427006';
-// Channel ID for music stopped notifications
 const MUSIC_STOPPED_CHANNEL_ID = '1393633652537163907';
-// Channel ID for bot left server notifications
 const BOT_LEFT_SERVER_CHANNEL_ID = '1393633926031085669';
 
 
 // --- NEW CONSTANTS FOR FEATURES ---
-const DJ_ROLE_NAME = 'DJ'; // Customizable role name for music control
+// This now uses the value from the updated config.js
+const DJ_ROLE_NAME = config.musicControl.djRoleName; 
 const BAR_LENGTH = 20;      // Length of the progress bar in characters
 const PROGRESS_INTERVAL = 5000; // Update interval in milliseconds (5 seconds)
 // ---------------------------------
@@ -129,6 +127,7 @@ function canControl(interaction, player) {
     const member = interaction.member;
     const isOwner = interaction.guild.ownerId === member.id;
     const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
+    // Check for the configurable DJ role name
     const isDJ = member.roles.cache.some(role => role.name === DJ_ROLE_NAME);
     const isRequester = player.queue.current && player.queue.current.requester.id === member.id;
 
@@ -553,6 +552,7 @@ kazagumo.on('playerStart', async (player, track) => {
 
       // Create action row with control buttons (initial state: Pause)
       const controlsRow = new ActionRowBuilder()
+        // The customId here will be 'pause' initially, but the button handler logic will change it to 'resume' if clicked while paused.
         .addComponents(
           new ButtonBuilder().setCustomId('pause').setLabel('Pause').setStyle(ButtonStyle.Primary).setEmoji(config.emojis.pause),
           new ButtonBuilder().setCustomId('skip').setLabel('Skip').setStyle(ButtonStyle.Secondary).setEmoji(config.emojis.skip),
@@ -999,7 +999,6 @@ client.on('interactionCreate', async interaction => {
         const currentTrack = player.queue.current;
         // FIX: Use msToTime helper
         const durationString = currentTrack.duration ? msToTime(currentTrack.duration) : 'N/A';
-        const positionString = player.position ? msToTime(player.position) : '0:00';
         const progressBar = createProgressBar(player, currentTrack.isStream || currentTrack.duration === 0);
 
 
@@ -1121,7 +1120,7 @@ client.on('interactionCreate', async interaction => {
                 const updatedRow = new ActionRowBuilder().addComponents(newComponents);
                 const currentEmbed = EmbedBuilder.from(messageToEdit.embeds[0]);
                 
-                // Loop is the 5th field (index 4), Volume is the 6th field (index 5)
+                // Find fields by name for safe updating
                 const loopFieldIndex = currentEmbed.data.fields.findIndex(f => f.name.includes('Loop'));
                 const volumeFieldIndex = currentEmbed.data.fields.findIndex(f => f.name.includes('Volume'));
                 
