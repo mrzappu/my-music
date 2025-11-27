@@ -692,7 +692,19 @@ client.on('interactionCreate', async interaction => {
 
     // FIX: 'play' command updated for proper flow and response
     if (commandName === 'play') {
-      await interaction.deferReply(); // Acknowledge the command first 
+      // --- FIX FOR ERROR 10062: Unknown interaction timeout ---
+      try {
+        await interaction.deferReply(); // Acknowledge the command first 
+      } catch (e) {
+        // If deferReply fails with code 10062, it means the interaction timed out.
+        if (e.code === 10062) {
+          console.error(`Interaction timeout (10062) on /play command from user ${member.user.tag} in guild ${guild.name}. Aborting command.`);
+          return; // Stop execution to prevent further failed interaction responses
+        }
+        throw e; // Re-throw other errors
+      }
+      // --------------------------------------------------------
+
       const query = options.getString('query');
 
       try {
@@ -740,7 +752,10 @@ client.on('interactionCreate', async interaction => {
             return interaction.editReply({ content: `${config.emojis.error} I need the **CONNECT** and **SPEAK** permissions in your voice channel.`, flags: 64 });
         }
         console.error('Play command error:', error);
-        return interaction.editReply({ content: `${config.emojis.error} An error occurred while trying to play the song.`, flags: 64 });
+        // Only attempt editReply if deferReply succeeded. The 10062 error is already handled above.
+        if (interaction.deferred || interaction.replied) {
+            return interaction.editReply({ content: `${config.emojis.error} An error occurred while trying to play the song.`, flags: 64 }).catch(() => null);
+        }
       }
     }
   }
