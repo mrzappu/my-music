@@ -81,8 +81,8 @@ async function songPlayNotification(player, track) {
         { name: 'Server', value: `${guild.name} (\`${guild.id}\`)`, inline: false },
         { name: 'Voice Channel', value: `${vcName} (\`${player.voiceId}\`)`, inline: true }, // Add VC Info
         { name: 'Requested By', value: `${track.requester.tag} (\`${track.requester.id}\`)`, inline: true },
-        // FIX: Use KazagumoTrack.formatedLength utility
-        { name: 'Duration', value: track.duration ? `\`${KazagumoTrack.formatedLength(track.duration)}\`` : '`N/A`', inline: true }
+        // FIX: Renamed formatedLength -> formatLength
+        { name: 'Duration', value: track.duration ? `\`${KazagumoTrack.formatLength(track.duration)}\`` : '`N/A`', inline: true }
       )
       .setColor('#0099ff')
       .setTimestamp();
@@ -447,8 +447,8 @@ kazagumo.on('playerStart', async (player, track) => {
     const channel = client.channels.cache.get(player.textId);
 
     if (channel) {
-      // FIX: Use KazagumoTrack.formatedLength helper for duration
-      const durationString = track.duration ? KazagumoTrack.formatedLength(track.duration) : 'N/A';
+      // FIX: Renamed formatedLength -> formatLength
+      const durationString = track.duration ? KazagumoTrack.formatLength(track.duration) : 'N/A';
 
       // Create the "Now Playing" embed
       const embed = new EmbedBuilder()
@@ -822,11 +822,11 @@ client.on('interactionCreate', async interaction => {
         if (!player.queue.current) {
           queueEmbed.setDescription('The queue is empty.');
         } else {
-          // FIX: Use KazagumoTrack.formatedLength
-          const tracks = player.queue.map((track, index) => `${index + 1}. [${track.title}](${track.uri}) - \`[${KazagumoTrack.formatedLength(track.duration)}]\``).slice(0, 10);
+          // FIX: Renamed formatedLength -> formatLength
+          const tracks = player.queue.map((track, index) => `${index + 1}. [${track.title}](${track.uri}) - \`[${KazagumoTrack.formatLength(track.duration)}]\``).slice(0, 10);
           
-          // FIX: Use KazagumoTrack.formatedLength for current track too
-          queueEmbed.setDescription(`**Now Playing:** [${player.queue.current.title}](${player.queue.current.uri}) - \`[${KazagumoTrack.formatedLength(player.queue.current.duration)}]\`\n\n**Up Next:**\n${tracks.join('\n') || 'No more tracks in queue.'}`);
+          // FIX: Renamed formatedLength -> formatLength for current track too
+          queueEmbed.setDescription(`**Now Playing:** [${player.queue.current.title}](${player.queue.current.uri}) - \`[${KazagumoTrack.formatLength(player.queue.current.duration)}]\`\n\n**Up Next:**\n${tracks.join('\n') || 'No more tracks in queue.'}`);
 
           if (player.queue.length > 10) {
             queueEmbed.setFooter({ text: `+${player.queue.length - 10} more tracks in queue.` });
@@ -843,9 +843,9 @@ client.on('interactionCreate', async interaction => {
           return interaction.reply({ content: `${config.emojis.error} No music is currently playing.`, flags: 64 });
         }
 
-        // FIX: Use currentTrack instead of currentTrack
-        const durationString = currentTrack.duration ? KazagumoTrack.formatedLength(currentTrack.duration) : 'N/A';
-        const positionString = player.position ? KazagumoTrack.formatedLength(player.position) : '0:00';
+        // FIX: Renamed formatedLength -> formatLength
+        const durationString = currentTrack.duration ? KazagumoTrack.formatLength(currentTrack.duration) : 'N/A';
+        const positionString = player.position ? KazagumoTrack.formatLength(player.position) : '0:00';
 
         const npEmbed = new EmbedBuilder()
           .setTitle(`${config.emojis.nowplaying} Now Playing`)
@@ -916,12 +916,14 @@ client.on('interactionCreate', async interaction => {
         const totalDurationSeconds = Math.floor(totalDurationMs / 1000);
 
         if (seekTimeMs < 0 || seekTimeMs > totalDurationMs) {
-            return interaction.reply({ content: `${config.emojis.error} Seek time must be between 0 and ${KazagumoTrack.formatedLength(totalDurationMs)}.`, flags: 64 });
+            // FIX: Renamed formatedLength -> formatLength
+            return interaction.reply({ content: `${config.emojis.error} Seek time must be between 0 and ${KazagumoTrack.formatLength(totalDurationMs)}.`, flags: 64 });
         }
 
         await player.seek(seekTimeMs);
         
-        const seekTimeFormatted = KazagumoTrack.formatedLength(seekTimeMs);
+        // FIX: Renamed formatedLength -> formatLength
+        const seekTimeFormatted = KazagumoTrack.formatLength(seekTimeMs);
         
         interaction.reply({ content: `${config.emojis.seek} Seeked to **${seekTimeFormatted}** in the track.` });
         break;
