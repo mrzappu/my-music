@@ -61,7 +61,7 @@ const DEBOUNCE_TIME_MS = 60000; // 1 minute delay per guild
 // ---------------------------------------------------------
 
 
-// --- HELPER FUNCTION: Activity Status Updater (MODIFIED) ---
+// --- HELPER FUNCTION: Activity Status Updater (MODIFIED TO BE STATIC) ---
 /**
  * Updates the bot's activity status based on the player state.
  * MODIFIED to always show the default activity to avoid song title in global status.
@@ -79,7 +79,7 @@ function updateActivity(client, player = null) {
 }
 // -----------------------------------------------------
 
-// --- NEW HELPER FUNCTION: Voice Channel Status Updater ---
+// --- NEW HELPER FUNCTION: Voice Channel Status Updater (Preserved Dynamic Logic) ---
 /**
  * Updates the name of the voice channel the bot is currently in.
  * Includes rate-limiting/debouncing to prevent Discord API crashes.
@@ -1007,6 +1007,7 @@ client.on('interactionCreate', async interaction => {
     try {
         await interaction.reply({ content, flags: 64 });
     } catch (e) {
+        // Fix for the 10062 error that was causing crashes
         if (e.code === 10062) {
             console.error(`Interaction timeout (10062) on button check reply from user ${interaction.user.tag} in guild ${interaction.guild.name}. Aborting command.`);
             return true; // Indicate that the error was handled
