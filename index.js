@@ -189,9 +189,9 @@ async function songPlayNotification(player, track) {
             .setDescription(`**[${track.title}](${track.uri})**`)
             .setThumbnail(guild.iconURL({ dynamic: true })) // Add Server Icon
             .addFields(
-                { name: 'Server', value: `${guild.name}`, inline: true },
-                { name: 'Voice Channel', value: `${vcName}`, inline: true }, // Add VC Info
-                { name: 'Requested By', value: `${track.requester.tag}`, inline: true }
+                { name: 'Server', value: guild.name, inline: true },
+                { name: 'Voice Channel', value: vcName, inline: true }, // Add VC Info
+                { name: 'Requested By', value: track.requester.tag, inline: true }
             )
             .setColor('#4CAF50') 
             .setTimestamp();
@@ -598,7 +598,7 @@ kazagumo.on('playerStart', async (player, track) => {
   }
 });
 
-// MODIFIED: playerEnd to include Smart Autoplay logic and clear the interval
+// MODIFIED: playerEnd to include Smart Autoplay logic and clear the interval (FIXED SYNTAX ERROR HERE)
 kazagumo.on('playerEnd', async (player) => {
   console.log(`Player ended for guild: ${player.guildId}`);
 
@@ -613,7 +613,8 @@ kazagumo.on('playerEnd', async (player) => {
   // --- START SMART AUTOPLAY LOGIC ---
   if (!player.data.get('twentyFourSeven') && player.queue.length === 0) {
       const lastTrack = player.queue.previous;
-      const channel = client.channels.cache.get(player.textId);
+      // Declared 'channel' once here to be reused below
+      const channel = client.channels.cache.get(player.textId); 
 
       // If a track was played previously, attempt to find a related one.
       if (lastTrack && !lastTrack.isStream) {
@@ -668,8 +669,7 @@ kazagumo.on('playerEnd', async (player) => {
       .setColor('#FF0000')
       .setTimestamp();
 
-    // Use the text channel the player is bound to
-    const channel = client.channels.cache.get(player.textId);
+    // Use the text channel the player is bound to (reusing the existing 'channel' variable)
     if (channel) {
       await channel.send({ embeds: [endEmbed] }).catch(console.error);
     }
@@ -731,7 +731,7 @@ kazagumo.on('playerDestroy', async (player) => {
   player.data.delete('progressInterval');
   
   // Send Music Stopped Notification (Feature 3)
-  const reason = player.queue.current ? `Queue ended after playing: ${player.queue.current.title}` : 'Queue ended.';
+  const reason = player.queue.current ? `Queue ended after playing: ${player.queue.current.title}` : 'Player destroyed.';
   musicStoppedNotification(player.guildId, player.voiceId, reason);
 
   try {
