@@ -507,7 +507,7 @@ kazagumo.on('playerCreate', (player) => {
   player.data.set('twentyFourSeven', false); // Initialize 24/7 mode state
 });
 
-// FIX: Robust playerStart to ensure 'Now Playing' message is sent and handles missing duration
+// MODIFIED: playerStart to use the detailed embed format
 kazagumo.on('playerStart', async (player, track) => {
   console.log(`Now playing: ${track.title} in guild: ${player.guildId}`);
 
@@ -521,14 +521,24 @@ kazagumo.on('playerStart', async (player, track) => {
       // FIX: Using msToTime
       const durationString = track.duration ? msToTime(track.duration) : 'N/A';
 
-      // Create the "Now Playing" embed
+      // --- START NEW DETAILED EMBED FORMAT ---
       const embed = new EmbedBuilder()
-        .setTitle(`${config.emojis.nowplaying} Now Playing`)
-        .setDescription(`[${track.title}](${track.uri}) - \`${durationString}\``)
+        .setTitle(`${config.emojis.nowplaying} ${track.title}`) // Use current nowplaying emoji and the song title
+        .setURL(track.uri) // Link the title to the song
         .setThumbnail(track.thumbnail || null)
         .setColor('#0099ff')
-        .setFooter({ text: `Requested by ${track.requester.tag}`, iconURL: track.requester.displayAvatarURL({ dynamic: true }) })
+        .setDescription(':notes: Enjoying the vibes? Type more song names below to keep the party going!')
+        .addFields(
+          // Using UNICODE emojis with bold formatting to match the request style
+          { name: 'Artist', value: `🎤 **${track.author || 'Unknown'}**`, inline: true },
+          { name: 'Requested by', value: `👤 **${track.requester.tag}**`, inline: true },
+          { name: 'Duration', value: `⏰ **${durationString}**`, inline: true },
+          { name: 'Loop', value: `⏺️ **${player.loop}**`, inline: true },
+          { name: 'Volume', value: `🔊 **${player.volume}%**`, inline: true },
+          { name: '\u200b', value: '\u200b', inline: true } // Empty field for spacing
+        )
         .setTimestamp();
+      // --- END NEW DETAILED EMBED FORMAT ---
 
       // Create action row with control buttons (initial state: Pause)
       const controlsRow = new ActionRowBuilder()
@@ -1116,7 +1126,14 @@ client.on('interactionCreate', async interaction => {
                 
                 // Update the message with the new components
                 const updatedRow = new ActionRowBuilder().addComponents(newComponents);
-                await messageToEdit.edit({ components: [updatedRow] }).catch(err => console.error('Error editing message components:', err));
+                // Also update the volume and loop info in the embed, as the message is editable
+                const currentEmbed = EmbedBuilder.from(messageToEdit.embeds[0]);
+                
+                // Update the specific fields (Volume is always the 5th field (index 4), Loop is the 4th field (index 3))
+                currentEmbed.spliceFields(3, 1, { name: 'Loop', value: `⏺️ **${player.loop}**`, inline: true });
+                currentEmbed.spliceFields(4, 1, { name: 'Volume', value: `🔊 **${player.volume}%**`, inline: true });
+
+                await messageToEdit.edit({ embeds: [currentEmbed], components: [updatedRow] }).catch(err => console.error('Error editing message components/embeds:', err));
             }
         }
         // --- END Button Change Logic ---
@@ -1141,6 +1158,15 @@ client.on('interactionCreate', async interaction => {
           newLoopMode = 'queue';
         }
         player.setLoop(newLoopMode);
+        
+        // Update the embed instantly on the button press
+        if (interaction.message && interaction.message.editable) {
+             const currentEmbed = EmbedBuilder.from(interaction.message.embeds[0]);
+             // Update the Loop field (index 3)
+             currentEmbed.spliceFields(3, 1, { name: 'Loop', value: `⏺️ **${newLoopMode}**`, inline: true });
+             await interaction.message.edit({ embeds: [currentEmbed] }).catch(err => console.error('Error editing embed on loop press:', err));
+        }
+
         // Optional: send a temporary follow-up message to confirm loop change
         await interaction.followUp({ content: `${config.emojis.loop} Loop mode set to **${newLoopMode}**!`, flags: 64 });
         break;
