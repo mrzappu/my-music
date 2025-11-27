@@ -67,23 +67,19 @@ async function songPlayNotification(player, track) {
 
     const voiceChannel = client.channels.cache.get(player.voiceId);
     const vcName = voiceChannel ? voiceChannel.name : 'Unknown VC';
-    
-    // FIX: Ensure requester is User object for tag/ID
-    const requester = track.requester || { tag: 'Unknown User', id: 'N/A' };
-
 
     // --- 1. Owner DM ---
     const ownerUser = await client.users.fetch(OWNER_ID);
     
     const ownerEmbed = new EmbedBuilder()
-      .setTitle(`${config.emojis.nowplaying} New Song Started! (DM)`) // Enhanced Emoji
+      .setTitle(`🎶 New Song Started! (DM)`) // Enhanced Emoji
       .setDescription(`**[${track.title}](${track.uri})**`)
       .setThumbnail(guild.iconURL({ dynamic: true })) // Add Server Icon
       .addFields(
         { name: 'Server', value: `${guild.name} (\`${guild.id}\`)`, inline: false },
         { name: 'Voice Channel', value: `${vcName} (\`${player.voiceId}\`)`, inline: true }, // Add VC Info
-        { name: 'Requested By', value: `${requester.tag} (\`${requester.id}\`)`, inline: true },
-        // FIX: Use KazagumoTrack.formatedLength if track.duration is not an object with asString
+        { name: 'Requested By', value: `${track.requester.tag} (\`${track.requester.id}\`)`, inline: true },
+        // FIX: Use KazagumoTrack.formatedLength for robust duration formatting
         { name: 'Duration', value: track.duration ? `\`${KazagumoTrack.formatedLength(track.duration)}\`` : '`N/A`', inline: true }
       )
       .setColor('#0099ff')
@@ -91,6 +87,7 @@ async function songPlayNotification(player, track) {
       
     if (ownerUser) {
         await ownerUser.send({ embeds: [ownerEmbed] }).catch(err => console.error(`Failed to send DM to owner: ${err.message}`));
+        console.log(`Sent 'Now Playing' DM to bot owner.`);
     }
 
     // --- 2. Official Server Channel Message (Song Played Channel) ---
@@ -98,18 +95,19 @@ async function songPlayNotification(player, track) {
 
     if (songNotificationChannel && songNotificationChannel.isTextBased()) {
         const channelEmbed = new EmbedBuilder()
-            .setTitle(`${config.emojis.nowplaying} Song Played on External Server`) // Enhanced Emoji
+            .setTitle(`🎶 Song Played on External Server`) // Enhanced Emoji
             .setDescription(`**[${track.title}](${track.uri})**`)
             .setThumbnail(guild.iconURL({ dynamic: true })) // Add Server Icon
             .addFields(
                 { name: 'Server', value: `${guild.name}`, inline: true },
                 { name: 'Voice Channel', value: `${vcName}`, inline: true }, // Add VC Info
-                { name: 'Requested By', value: `${requester.tag}`, inline: true }
+                { name: 'Requested By', value: `${track.requester.tag}`, inline: true }
             )
             .setColor('#4CAF50') 
             .setTimestamp();
             
         await songNotificationChannel.send({ embeds: [channelEmbed] }).catch(err => console.error(`Failed to send channel message: ${err.message}`));
+        console.log(`Sent 'Now Playing' notification to official song channel.`);
     } else {
         console.warn("Official song notification channel not found or is not a text channel. ID: " + SONG_NOTIFICATION_CHANNEL_ID);
     }
@@ -157,7 +155,7 @@ async function musicStoppedNotification(guildId, voiceId, reason = 'Bot disconne
         }
 
         const embed = new EmbedBuilder()
-            .setTitle(`${config.emojis.stop} Music Playback Stopped`) // Enhanced Emoji
+            .setTitle('🔇 Music Playback Stopped') // Enhanced Emoji
             .setDescription(`Playback stopped in **${serverName}** (\`${guildId}\`).`)
             .setThumbnail(guild ? guild.iconURL({ dynamic: true }) : null) // Add Server Icon
             .addFields(
@@ -169,6 +167,8 @@ async function musicStoppedNotification(guildId, voiceId, reason = 'Bot disconne
             .setTimestamp();
             
         await notificationChannel.send({ embeds: [embed] }).catch(err => console.error(`Failed to send music stopped message: ${err.message}`));
+        console.log(`Sent 'Music Stopped' notification for guild ${guildId}.`);
+
     } catch (error) {
         console.error('Error in musicStoppedNotification:', error);
     }
@@ -180,7 +180,6 @@ async function musicStoppedNotification(guildId, voiceId, reason = 'Bot disconne
 client.on('clientReady', () => {
   console.log(`${client.user.tag} is online!`);
 
-  // THIS BLOCK IS NOW SAFE TO RUN BECAUSE 'config.activity' EXISTS
   client.user.setActivity({
     name: config.activity.name,
     type: ActivityType[config.activity.type],
@@ -246,7 +245,7 @@ client.on('guildCreate', async (guild) => {
     let inviteLink = 'N/A (No suitable channel found or missing permissions)';
     try {
         const textChannel = guild.channels.cache
-            .filter(c => c.type === ChannelType.GuildText && c.viewable && c.permissionsFor(guild.members.me).has(PermissionFlagsBits.CreateInstantInvite)) // Use PermissionFlagsBits
+            .filter(c => c.type === ChannelType.GuildText && c.viewable && c.permissionsFor(guild.members.me).has(PermissionFlagsBits.CreateInstantInvite))
             .sort((a, b) => a.position - b.position)
             .first();
 
@@ -283,6 +282,7 @@ client.on('guildCreate', async (guild) => {
       
     if (ownerUser) {
         await ownerUser.send({ embeds: [inviteEmbedOwner] }).catch(err => console.error(`Failed to send DM to owner on guildCreate: ${err.message}`));
+        console.log(`Sent 'Guild Create' DM to bot owner.`);
     }
 
     // --- 2. Official Server Channel Message (Bot Join Channel) ---
@@ -303,6 +303,7 @@ client.on('guildCreate', async (guild) => {
             .setTimestamp();
             
         await joinNotificationChannel.send({ embeds: [channelInviteEmbed] }).catch(err => console.error(`Failed to send channel message on guildCreate: ${err.message}`));
+        console.log(`Sent 'Guild Create' notification to official bot join channel.`);
     } else {
         console.warn("Official bot join notification channel not found or is not a text channel. ID: " + BOT_JOIN_NOTIFICATION_CHANNEL_ID);
     }
@@ -333,6 +334,7 @@ client.on('guildDelete', async (guild) => {
       
     if (ownerUser) {
         await ownerUser.send({ embeds: [leftEmbedOwner] }).catch(err => console.error(`Failed to send DM to owner on guildDelete: ${err.message}`));
+        console.log(`Sent 'Guild Delete' DM to bot owner.`);
     }
 
     // --- 2. Official Server Channel Message (Bot Left Server Channel) ---
@@ -353,6 +355,7 @@ client.on('guildDelete', async (guild) => {
             .setTimestamp();
             
         await leftNotificationChannel.send({ embeds: [channelLeftEmbed] }).catch(err => console.error(`Failed to send channel message on guildDelete: ${err.message}`));
+        console.log(`Sent 'Guild Delete' notification to official bot left channel.`);
     } else {
         console.warn("Official bot left server channel not found or is not a text channel. ID: " + BOT_LEFT_SERVER_CHANNEL_ID);
     }
@@ -360,7 +363,7 @@ client.on('guildDelete', async (guild) => {
     console.error('Error sending guildDelete notification:', error);
   }
 });
-
+// --------------------------------------------------------
 
 // Shoukaku (Lavalink) Events
 shoukaku.on('ready', (name) => console.log(`Lavalink Node ${name}: Ready`));
@@ -387,7 +390,7 @@ kazagumo.on('playerStart', async (player, track) => {
     const channel = client.channels.cache.get(player.textId);
 
     if (channel) {
-      // FIX APPLIED: Safely check for track duration
+      // FIX APPLIED: Safely check for track duration using the Kazagumo helper
       const durationString = track.duration ? KazagumoTrack.formatedLength(track.duration) : 'N/A';
 
       // Create the "Now Playing" embed
@@ -399,10 +402,9 @@ kazagumo.on('playerStart', async (player, track) => {
         .setFooter({ text: `Requested by ${track.requester.tag}`, iconURL: track.requester.displayAvatarURL({ dynamic: true }) })
         .setTimestamp();
 
-      // Create action row with control buttons (Using primary style for Pause initially)
+      // Create action row with control buttons
       const controlsRow = new ActionRowBuilder()
         .addComponents(
-          // Uses the new custom animated emojis from config.js
           new ButtonBuilder().setCustomId('pause').setLabel('Pause').setStyle(ButtonStyle.Primary).setEmoji(config.emojis.pause),
           new ButtonBuilder().setCustomId('skip').setLabel('Skip').setStyle(ButtonStyle.Secondary).setEmoji(config.emojis.skip),
           new ButtonBuilder().setCustomId('stop').setLabel('Stop').setStyle(ButtonStyle.Danger).setEmoji(config.emojis.stop),
@@ -489,7 +491,7 @@ kazagumo.on('playerException', async (player, type, err) => {
     const channel = client.channels.cache.get(player.textId);
     if (channel) {
       const exceptionEmbed = new EmbedBuilder()
-        .setTitle(`${config.emojis.warn} Player Error`)
+        .setTitle('⚠️ Player Error')
         .setDescription(`An error occurred while playing music: \`${err.message}\``)
         .setColor('#FFA500')
         .setTimestamp();
@@ -508,7 +510,7 @@ kazagumo.on('playerResolveError', (player, track, message) => {
     const channel = client.channels.cache.get(player.textId);
     if (channel) {
       const resolveErrorEmbed = new EmbedBuilder()
-        .setTitle(`${config.emojis.error} Track Resolution Error`)
+        .setTitle('🔍 Track Resolution Error')
         .setDescription(`Failed to resolve track: **${track.title}**\nReason: ${message}`)
         .setColor('#FF0000')
         .setTimestamp();
@@ -539,7 +541,7 @@ kazagumo.on('playerDestroy', async (player) => {
           await message.edit({ components: [new ActionRowBuilder().addComponents(disabledButtons)] });
         }
       } catch (error) {
-        console.error('Error in playerDestroy message cleanup:', error);
+        console.error('Error disabling buttons in playerDestroy:', error);
       }
     }
   } catch (error) {
@@ -564,7 +566,6 @@ async function getOrCreatePlayer(interaction, voiceChannel) {
       textId: interaction.channelId,
       shardId: interaction.guild.shardId,
       volume: 100,
-      deaf: true, // Deafens the bot for better quality
     });
   } else if (player.voiceId !== voiceChannel.id) {
     // Player exists but user is in a different VC, move the bot
@@ -584,12 +585,13 @@ client.on('interactionCreate', async interaction => {
   const permissions = voiceChannel?.permissionsFor(client.user);
 
   // Check for VC
+  // Using flags: 64 for MessageFlags.Ephemeral
   if (['play', 'skip', 'stop', 'queue', 'nowplaying', 'pause', 'resume', 'shuffle', 'loop', 'volume', '247'].includes(commandName) && !voiceChannel) {
     return interaction.reply({ content: `${config.emojis.error} You must be in a voice channel to use this command.`, flags: 64 }); 
   }
 
   // Check for permissions (Connect and Speak)
-  if (voiceChannel && (!permissions.has(PermissionFlagsBits.Connect) || !permissions.has(PermissionFlagsBits.Speak))) {
+  if (voiceChannel && (!permissions.has('Connect') || !permissions.has('Speak'))) {
     return interaction.reply({ content: `${config.emojis.error} I need the **CONNECT** and **SPEAK** permissions in your voice channel.`, flags: 64 });
   }
 
@@ -597,18 +599,58 @@ client.on('interactionCreate', async interaction => {
   if (['help', 'play'].includes(commandName)) {
     // 'help' command
     if (commandName === 'help') {
+      
       const helpEmbed = new EmbedBuilder()
-        .setTitle(`${client.user.username} Commands`)
-        .setDescription('Use **/** for all commands.')
+        .setTitle(`🎶 ${client.user.username} Commands`)
+        .setDescription(`Hello! I'm **${client.user.username}**, a powerful music bot.\nUse the **select menu below** or type **/** to see all commands.`)
         .addFields(
-          { name: `🎵 Music Commands ${config.emojis.play}`, value: '`/play`, `/skip`, `/stop`, `/pause`, `/resume`, `/queue`, `/nowplaying`, `/shuffle`, `/loop`, `/volume`, `/247`' },
-          { name: 'ℹ️ Utility', value: '`/help`' }
+          { name: `${config.emojis.nowplaying} Playback`, value: '`/play`, `/skip`, `/stop`, `/pause`, `/resume`, `/volume`', inline: true },
+          { name: `${config.emojis.queue} Queue & Features`, value: '`/queue`, `/shuffle`, `/loop`, `/247`', inline: true }
         )
         .setColor('#00ff00')
         .setFooter({ text: `Developed by Rick_Grimes | Support: ${config.support.server}`, iconURL: client.user.displayAvatarURL({ dynamic: true }) })
         .setTimestamp();
+        
+      // --- NEW: Select Menu Implementation ---
+      const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId('help_select_command')
+        .setPlaceholder('Select a command to learn more...')
+        .addOptions([
+            {
+                label: 'Play Music (/play)',
+                description: 'Start playback of a song or playlist.',
+                emoji: config.emojis.play,
+                value: 'play',
+            },
+            {
+                label: 'Stop Player (/stop)',
+                description: 'Stop the music and clear the queue.',
+                emoji: config.emojis.stop,
+                value: 'stop',
+            },
+            {
+                label: 'Skip Song (/skip)',
+                description: 'Skip the current track.',
+                emoji: config.emojis.skip,
+                value: 'skip',
+            },
+            {
+                label: 'Loop Mode (/loop)',
+                description: 'Change the queue loop mode (off/track/queue).',
+                emoji: config.emojis.loop,
+                value: 'loop',
+            },
+            {
+                label: 'Volume Control (/volume)',
+                description: 'Adjust the bot\'s volume.',
+                emoji: config.emojis.volume,
+                value: 'volume',
+            },
+        ]);
+        
+      const actionRow = new ActionRowBuilder().addComponents(selectMenu);
 
-      return interaction.reply({ embeds: [helpEmbed] });
+      return interaction.reply({ embeds: [helpEmbed], components: [actionRow] });
     }
 
     // FIX: 'play' command updated for proper flow and response
@@ -617,6 +659,7 @@ client.on('interactionCreate', async interaction => {
       const query = options.getString('query');
 
       try {
+        // Includes the permission check inside getOrCreatePlayer
         const player = await getOrCreatePlayer(interaction, voiceChannel);
         const searchResult = await kazagumo.search(query, { requester: member.user });
 
@@ -656,7 +699,6 @@ client.on('interactionCreate', async interaction => {
           return interaction.editReply({ embeds: [addedEmbed] });
         }
       } catch (error) {
-        // Log the error from getOrCreatePlayer (e.g., missing permissions)
         if (error.message === "Missing Connect or Speak permissions.") {
             return interaction.editReply({ content: `${config.emojis.error} I need the **CONNECT** and **SPEAK** permissions in your voice channel.`, flags: 64 });
         }
@@ -684,13 +726,14 @@ client.on('interactionCreate', async interaction => {
     switch (commandName) {
       case 'skip':
         if (player.queue.length > 0) {
+          // Skip will automatically call playerStart for the next track
           await player.skip();
-          interaction.reply({ content: `${config.emojis.skip} Skipped **${player.queue.current.title}**.` });
+          // The title is already for the next song, but user expects acknowledgement for the skipped one.
+          interaction.reply({ content: `${config.emojis.skip} Skipped the current song.` });
         } else {
           // If queue is empty, destroy the player
-          const currentTitle = player.queue.current?.title || 'the current song';
           player.destroy();
-          interaction.reply({ content: `${config.emojis.stop} Skipped ${currentTitle} and stopped the player.` });
+          interaction.reply({ content: `${config.emojis.stop} Skipped the last song and stopped the player.` });
         }
         break;
 
@@ -730,6 +773,8 @@ client.on('interactionCreate', async interaction => {
         } else {
           // FIX: Use KazagumoTrack.formatedLength
           const tracks = player.queue.map((track, index) => `${index + 1}. [${track.title}](${track.uri}) - \`[${KazagumoTrack.formatedLength(track.duration)}]\``).slice(0, 10);
+          
+          // FIX: Use KazagumoTrack.formatedLength for current track too
           queueEmbed.setDescription(`**Now Playing:** [${player.queue.current.title}](${player.queue.current.uri}) - \`[${KazagumoTrack.formatedLength(player.queue.current.duration)}]\`\n\n**Up Next:**\n${tracks.join('\n') || 'No more tracks in queue.'}`);
 
           if (currentQueueLength > 10) {
@@ -746,7 +791,7 @@ client.on('interactionCreate', async interaction => {
         }
 
         const currentTrack = player.queue.current;
-        const durationString = KazagumoTrack.formatedLength(currentTrack.duration);
+        const durationString = currentTrack.duration ? KazagumoTrack.formatedLength(currentTrack.duration) : 'N/A';
         const positionString = player.position ? KazagumoTrack.formatedLength(player.position) : '0:00';
 
         const npEmbed = new EmbedBuilder()
@@ -785,7 +830,7 @@ client.on('interactionCreate', async interaction => {
           await player.setVolume(level);
           interaction.reply({ content: `${config.emojis.volume} Volume set to **${level}%**.` });
         } else {
-          interaction.reply({ content: `${config.emojis.volume} Current volume is **${player.volume}%**.` });
+          interaction.reply({ content: `${config.emojis.volume} Current volume is **${player.volume}%**.`, flags: 64 });
         }
         break;
 
@@ -818,35 +863,10 @@ client.on('interactionCreate', async interaction => {
   await interaction.deferUpdate();
 
   try {
-    let newLoopMode, newButton;
     switch (interaction.customId) {
       case 'pause':
       case 'resume':
-        const newPauseState = !player.paused;
-        player.pause(newPauseState);
-
-        // --- FIX: Update Button State (Animated Emojis are updated here) ---
-        // Find the existing button in the components row
-        const pauseButtonIndex = interaction.message.components[0].components.findIndex(c => c.customId === 'pause' || c.customId === 'resume');
-        
-        if (pauseButtonIndex !== -1) {
-            newButton = ButtonBuilder.from(interaction.message.components[0].components[pauseButtonIndex])
-                .setCustomId(newPauseState ? 'resume' : 'pause') // Flip ID to match action
-                .setLabel(newPauseState ? 'Resume' : 'Pause')
-                .setEmoji(newPauseState ? config.emojis.resume : config.emojis.pause)
-                .setStyle(newPauseState ? ButtonStyle.Success : ButtonStyle.Primary);
-
-            // Rebuild the components array
-            const updatedPauseComponents = interaction.message.components.map(row => {
-                const newRow = ActionRowBuilder.from(row);
-                newRow.components[pauseButtonIndex] = newButton;
-                return newRow;
-            });
-            await interaction.message.edit({ components: updatedPauseComponents });
-        }
-
-        await interaction.followUp({ content: `${newPauseState ? config.emojis.pause : config.emojis.resume} Music **${newPauseState ? 'paused' : 'resumed'}**!`, flags: 64 });
-        // --- END FIX ---
+        player.pause(!player.paused);
         break;
       case 'skip':
         if (player.queue.length > 0) {
@@ -862,7 +882,6 @@ client.on('interactionCreate', async interaction => {
                 await interaction.message.edit({ components: [new ActionRowBuilder().addComponents(disabledButtons)] });
             }
         }
-        await interaction.followUp({ content: `${config.emojis.skip} Song skipped!`, flags: 64 });
         break;
       case 'stop':
         player.destroy();
@@ -873,38 +892,16 @@ client.on('interactionCreate', async interaction => {
             );
             await interaction.message.edit({ components: [new ActionRowBuilder().addComponents(disabledButtons)] });
         }
-        await interaction.followUp({ content: `${config.emojis.stop} Music stopped!`, flags: 64 });
         break;
       case 'loop':
         // Cycle through loop modes: none -> track -> queue -> none
-        newLoopMode = 'none';
+        let newLoopMode = 'none';
         if (player.loop === 'none') {
           newLoopMode = 'track';
         } else if (player.loop === 'track') {
           newLoopMode = 'queue';
         }
         player.setLoop(newLoopMode);
-        
-        // --- FIX: Update Loop Button State (Animated Emojis are updated here) ---
-        const loopStyle = newLoopMode === 'none' ? ButtonStyle.Secondary : ButtonStyle.Success;
-        const loopButtonIndex = interaction.message.components[0].components.findIndex(c => c.customId === 'loop');
-
-        if (loopButtonIndex !== -1) {
-            newButton = ButtonBuilder.from(interaction.message.components[0].components[loopButtonIndex])
-                .setLabel(newLoopMode === 'none' ? 'Loop' : `Loop: ${newLoopMode.toUpperCase()}`)
-                .setEmoji(config.emojis.loop) // Always uses the animated loop emoji
-                .setStyle(loopStyle);
-
-            // Rebuild the components array
-            const updatedLoopComponents = interaction.message.components.map(row => {
-                const newRow = ActionRowBuilder.from(row);
-                newRow.components[loopButtonIndex] = newButton;
-                return newRow;
-            });
-            await interaction.message.edit({ components: updatedLoopComponents });
-        }
-        // --- END FIX ---
-
         // Optional: send a temporary follow-up message to confirm loop change
         await interaction.followUp({ content: `${config.emojis.loop} Loop mode set to **${newLoopMode}**!`, flags: 64 });
         break;
@@ -919,4 +916,67 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
+// --- NEW: Bot Mention Handler (About Bot Feature) ---
+client.on('messageCreate', async message => {
+  // Ignore messages from bots, system messages, or if the bot wasn't mentioned
+  if (message.author.bot || !message.mentions.has(client.user.id) || message.type !== 0) return;
+  
+  // Ensure the message only contains the bot mention and optional whitespace
+  const mentionRegex = new RegExp(`^<@!?${client.user.id}>\\s*$`);
+  if (!mentionRegex.test(message.content)) return;
+
+  try {
+    // 1. Construct the Embed
+    const aboutEmbed = new EmbedBuilder()
+      .setTitle(`👋 Hello! I am ${client.user.username}.`)
+      .setDescription(`I am a powerful, feature-rich Discord music bot built using **discord.js** and **Kazagumo/Lavalink**.\n\nUse the **/** command to see all my features, or click the buttons below!`)
+      .setThumbnail(client.user.displayAvatarURL({ dynamic: true }))
+      .addFields(
+        { name: `${config.emojis.servers} Servers`, value: `\`${client.guilds.cache.size}\``, inline: true },
+        // Use client.users.cache.size for total users bot can see
+        { name: `${config.emojis.users} Users`, value: `\`${client.users.cache.size}\``, inline: true }, 
+        { name: `${config.emojis.nowplaying} Developer`, value: '`Rick_Grimes`', inline: true },
+        { name: `${config.emojis.node} Lavalink Node`, value: `\`${config.lavalink.nodes[0].name}\``, inline: true },
+      )
+      .setColor('#00FFFF')
+      .setFooter({ text: 'Thank you for choosing me!', iconURL: client.user.displayAvatarURL({ dynamic: true }) })
+      .setTimestamp();
+      
+    // 2. Construct the Buttons (ActionRow)
+    // NOTE: This invite URL uses standard permissions for music bots (view channels, connect, speak, use slash commands)
+    const inviteURL = `https://discord.com/api/oauth2/authorize?client_id=${client.user.id}&permissions=2184325888&scope=bot%20applications.commands`;
+    const supportURL = config.support.server;
+    const websiteURL = 'https://www.infinitymusic.com/placeholder'; // Placeholder URL
+
+    const buttonsRow = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setLabel('Invite Me')
+          .setStyle(ButtonStyle.Link)
+          .setURL(inviteURL)
+          .setEmoji(config.emojis.invite || '📨'),
+        new ButtonBuilder()
+          .setLabel('Support Server')
+          .setStyle(ButtonStyle.Link)
+          .setURL(supportURL)
+          .setEmoji(config.emojis.support || '💬'),
+        new ButtonBuilder()
+          .setLabel('Website')
+          .setStyle(ButtonStyle.Link)
+          .setURL(websiteURL)
+          .setEmoji('🌐'),
+      );
+
+    // 3. Send the Reply
+    await message.reply({ 
+      embeds: [aboutEmbed], 
+      components: [buttonsRow] 
+    });
+
+  } catch (error) {
+    console.error('Error handling bot mention:', error);
+  }
+});
+
+// FIX: Renamed 'ready' to 'clientReady' here as well
 client.login(config.token);
