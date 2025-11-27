@@ -5,14 +5,14 @@ module.exports = {
   enablePrefix: true, // Set to false to disable prefix commands
   
   // Owner ID for notifications (You must define OWNER_ID in your .env or replace this)
-  OWNER_ID: process.env.OWNER_ID || '809441570818359307',
+  OWNER_ID: process.env.OWNER_ID || 'YOUR_DISCORD_USER_ID',
 
   // Official Server Logging Channels (You must define these in your .env or replace this)
   // These are optional. If undefined, notifications to these channels will be skipped.
-  LOG_CHANNEL_ID: process.env.LOG_CHANNEL_ID || '1393633652537163907',
-  JOIN_CHANNEL_ID: process.env.JOIN_CHANNEL_ID || '1411369682459427006',
-  LEAVE_CHANNEL_ID: process.env.LEAVE_CHANNEL_ID || '1393633926031085669',
-  SONG_NOTIFICATION_CHANNEL_ID: process.env.SONG_NOTIFICATION_CHANNEL_ID || '1411369713266589787',
+  LOG_CHANNEL_ID: process.env.LOG_CHANNEL_ID || 'YOUR_BOT_LOG_CHANNEL_ID',
+  JOIN_CHANNEL_ID: process.env.JOIN_CHANNEL_ID || 'YOUR_BOT_JOIN_CHANNEL_ID',
+  LEAVE_CHANNEL_ID: process.env.LEAVE_CHANNEL_ID || 'YOUR_BOT_LEAVE_CHANNEL_ID',
+  SONG_NOTIFICATION_CHANNEL_ID: process.env.SONG_NOTIFICATION_CHANNEL_ID || 'YOUR_SONG_NOTIFICATION_CHANNEL_ID',
 
   // Bot Activity
   activity: {
@@ -42,18 +42,24 @@ module.exports = {
     server: process.env.SUPPORT_SERVER || 'https://discord.gg/your-support-server-invite'
   },
 
-  // Emojis
+  // Emojis - REPLACE 'YOUR_EMOJI_ID' with the actual IDs of your animated emojis
   emojis: {
-    play: '▶️',
-    pause: '⏸️',
-    resume: '▶️',
-    skip: '⏭️',
-    stop: '⏹️',
-    queue: '📜',
-    shuffle: '🔀',
-    loop: '🔄',
-    volume: '🔊',
-    nowplaying: '🎵',
+    // Animated Music Emojis (Replace the IDs)
+    play: '<a:play:1443619986907336785>',
+    pause: '<a:pause:1443620907233837066>',
+    resume: '<a:resume:1443619986907336785>',
+    skip: '<a:skip:1443619983409287221>',
+    stop: '<a:stop:1443619980859015354>',
+    loop: '<a:loop:1443619976400343100>',
+    volume: '<a:volume:1443619978636034099>',
+    nowplaying: '<a:np:1443621459057578005>',
+    queue: '<a:queue:YOUR_EMOJI_ID>',
+    shuffle: '<a:shuffle:1443619973216862461>',
+    seek: '<a:seek:YOUR_EMOJI_ID>',
+    remove: '<a:remove:YOUR_EMOJI_ID>',
+    clear: '<a:clear:YOUR_EMOJI_ID>',
+    
+    // Standard Utility/Status Emojis (You can change these too if you have animated ones)
     success: '✅',
     error: '❌',
     warn: '⚠️',
@@ -61,6 +67,5 @@ module.exports = {
     stats: '📊',
     invite: '📩',
     support: '📞',
-    // ... add any other emojis you might need
   },
 };
