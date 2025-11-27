@@ -230,9 +230,24 @@ client.once('clientReady', async () => {
           .setRequired(false)
           .setMinValue(0)
           .setMaxValue(100)),
+
+    // --- NEW COMMANDS ---
+    new SlashCommandBuilder().setName('seek').setDescription('Seeks to a specific time in the current song.')
+      .addStringOption(option =>
+        option.setName('time')
+          .setDescription('Time in seconds or MM:SS format (e.g., 90 or 1:30)')
+          .setRequired(true)),
+    new SlashCommandBuilder().setName('remove').setDescription('Removes a song from the queue by its index.')
+      .addIntegerOption(option =>
+        option.setName('index')
+          .setDescription('The number of the song to remove from the /queue list.')
+          .setRequired(true)
+          .setMinValue(1)),
+    new SlashCommandBuilder().setName('clear').setDescription('Clears all tracks from the queue.'),
+    // --- END NEW COMMANDS ---
+    
     new SlashCommandBuilder().setName('247').setDescription('Toggles 24/7 mode (keeps bot in VC even when queue ends).'),
     new SlashCommandBuilder().setName('help').setDescription('Shows the list of commands.'),
-    // --- NEW COMMAND: /about ---
     new SlashCommandBuilder().setName('about').setDescription('Shows information about the bot and helpful links.'),
   ].map(command => command.toJSON());
 
@@ -310,13 +325,18 @@ client.on('interactionCreate', async interaction => {
           .setCustomId('help_select')
           .setPlaceholder('Select a command for detailed help...')
           .addOptions(
-            { label: '▶️ Play', description: 'Plays a song or adds it to the queue.', value: 'help_play', emoji: config.emojis.play },
-            { label: '⏹️ Stop', description: 'Stops the music and clears the queue.', value: 'help_stop', emoji: config.emojis.stop },
-            { label: '⏭️ Skip', description: 'Skips the current song.', value: 'help_skip', emoji: config.emojis.skip },
-            { label: '🔄 Loop', description: 'Sets the loop mode (track/queue/none).', value: 'help_loop', emoji: config.emojis.loop },
-            { label: '🔊 Volume', description: 'Adjusts the player volume (0-100).', value: 'help_volume', emoji: config.emojis.volume },
-            { label: '📜 Queue', description: 'Displays the current song queue.', value: 'help_queue', emoji: config.emojis.queue },
-            { label: 'ℹ️ Utility', description: 'General info and bot statistics.', value: 'help_utility', emoji: config.emojis.stats }
+            { label: 'Play', description: 'Plays a song or adds it to the queue.', value: 'help_play', emoji: config.emojis.play },
+            { label: 'Stop', description: 'Stops the music and clears the queue.', value: 'help_stop', emoji: config.emojis.stop },
+            { label: 'Skip', description: 'Skips the current song.', value: 'help_skip', emoji: config.emojis.skip },
+            // NEW OPTIONS
+            { label: 'Seek', description: 'Jump to a specific time in the current song.', value: 'help_seek', emoji: config.emojis.seek },
+            { label: 'Remove', description: 'Removes a specific song from the queue.', value: 'help_remove', emoji: config.emojis.remove },
+            { label: 'Clear Queue', description: 'Removes all songs from the queue.', value: 'help_clear', emoji: config.emojis.clear },
+            // END NEW OPTIONS
+            { label: 'Loop', description: 'Sets the loop mode (track/queue/none).', value: 'help_loop', emoji: config.emojis.loop },
+            { label: 'Volume', description: 'Adjusts the player volume (0-100).', value: 'help_volume', emoji: config.emojis.volume },
+            { label: 'Queue', description: 'Displays the current song queue.', value: 'help_queue', emoji: config.emojis.queue },
+            { label: 'Utility', description: 'General info and bot statistics.', value: 'help_utility', emoji: config.emojis.stats }
           );
           
         const actionRow = new ActionRowBuilder().addComponents(selectMenu);
@@ -331,7 +351,7 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ embeds: [helpEmbed], components: [actionRow] });
       }
 
-      // --- NEW: /about Command Handler ---
+      // --- /about Command Handler ---
       if (commandName === 'about') {
         const inviteURL = `https://discord.com/api/oauth2/authorize?client_id=${client.user.id}&permissions=8&scope=bot%20applications.commands`;
         const websiteURL = 'https://infinity-music-bot.com'; 
@@ -520,6 +540,62 @@ client.on('interactionCreate', async interaction => {
         player.setVolume(level);
         await interaction.editReply({ content: `${config.emojis.volume} Volume set to **${level}%**!` });
         break;
+        
+      // --- NEW COMMAND IMPLEMENTATIONS ---
+      case 'clear':
+        if (player.queue.length === 0) {
+          return interaction.editReply({ content: `${config.emojis.warn} The queue is already empty.` });
+        }
+        player.queue.clear();
+        await interaction.editReply({ content: `${config.emojis.clear} The queue has been cleared!` });
+        break;
+
+      case 'remove':
+        const removeIndex = interaction.options.getInteger('index');
+        const actualIndex = removeIndex - 1; 
+
+        if (actualIndex < 0 || actualIndex >= player.queue.length) {
+          return interaction.editReply({ content: `${config.emojis.error} Invalid queue index (\`${removeIndex}\`). Use \`/queue\` to see the list.` });
+        }
+        
+        const removedTrack = player.queue.splice(actualIndex, 1)[0];
+        await interaction.editReply({ content: `${config.emojis.remove} Removed song **${removeIndex}. [${removedTrack.title}](${removedTrack.uri})** from the queue.` });
+        break;
+
+      case 'seek':
+        const timeInput = interaction.options.getString('time');
+        const currentDuration = player.queue.current.duration;
+        
+        let positionMs;
+        
+        // Time parsing: supports pure seconds or MM:SS/HH:MM:SS format
+        if (timeInput.includes(':')) {
+          const parts = timeInput.split(':').map(Number);
+          let seconds = 0;
+          if (parts.length === 2) { // MM:SS
+            seconds = parts[0] * 60 + parts[1];
+          } else if (parts.length === 3) { // HH:MM:SS
+            seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+          } else {
+            return interaction.editReply({ content: `${config.emojis.error} Invalid time format. Use \`seconds\` or \`MM:SS\`.` });
+          }
+          positionMs = seconds * 1000;
+        } else {
+          // Assume time is in seconds
+          positionMs = Number(timeInput) * 1000;
+        }
+
+        if (isNaN(positionMs) || positionMs < 0 || positionMs > currentDuration) {
+          return interaction.editReply({ content: `${config.emojis.error} Invalid time format or position is outside the song's duration (\`0 - ${KazagumoTrack.formatedLength(currentDuration)}\`).` });
+        }
+
+        await player.seek(positionMs);
+        const soughtTime = KazagumoTrack.formatedLength(positionMs);
+        
+        await interaction.editReply({ content: `${config.emojis.seek} Seeked to \`${soughtTime}\`.` });
+        break;
+      // --- END NEW COMMAND IMPLEMENTATIONS ---
+
 
       case '247':
         player.twentyFourSeven = !player.twentyFourSeven;
@@ -540,12 +616,12 @@ client.on('interactionCreate', async interaction => {
 });
 
 
-// --- NEW: Select Menu Interaction Handler for /help ---
+// --- Select Menu Interaction Handler for /help (Updated) ---
 client.on('interactionCreate', async interaction => {
   if (!interaction.isStringSelectMenu()) return;
   if (interaction.customId !== 'help_select') return;
 
-  await interaction.deferUpdate(); // Acknowledge the selection
+  await interaction.deferUpdate(); 
   
   const selectedValue = interaction.values[0];
   let title = 'Help Command Details';
@@ -572,6 +648,30 @@ client.on('interactionCreate', async interaction => {
       usage = '`/skip`';
       color = '#FFA500';
       break;
+      
+    // --- NEW HELP CASES ---
+    case 'help_seek':
+      title = `${config.emojis.seek} /seek Command`;
+      description = 'Jumps to a specific position in the currently playing song.';
+      usage = '`/seek <time>`\n**Time Formats:** `seconds` (e.g., `/seek 90`) or `MM:SS` (e.g., `/seek 1:30`)';
+      color = '#00BFFF';
+      break;
+
+    case 'help_remove':
+      title = `${config.emojis.remove} /remove Command`;
+      description = 'Removes a specific song from the queue using its 1-based index (shown in /queue).';
+      usage = '`/remove <index>`\nExample: `/remove 3` to remove the 3rd song in the queue.';
+      color = '#FF4500';
+      break;
+
+    case 'help_clear':
+      title = `${config.emojis.clear} /clear Command`;
+      description = 'Removes ALL songs currently in the queue, stopping the playback if the current song ends.';
+      usage = '`/clear`';
+      color = '#8B0000';
+      break;
+    // --- END NEW HELP CASES ---
+      
     case 'help_loop':
       title = `${config.emojis.loop} /loop Command`;
       description = 'Sets the loop mode for the player.';
@@ -789,11 +889,10 @@ client.on('messageCreate', async message => {
   const prefix = config.prefix;
   const isPrefixCommand = message.content.toLowerCase().startsWith(prefix.toLowerCase());
   
-  // --- NEW: Bot Mention Check ---
+  // Bot Mention Check
   const isBotMention = message.mentions.has(client.user) && !isPrefixCommand;
 
   if (isBotMention) {
-    // Check if the message is just a bot mention (e.g., "@BotName")
     // This regex checks for the mention followed by optional whitespace, and then the end of the string
     const mentionRegex = new RegExp(`^<@!?${client.user.id}>\\s*$`);
     
