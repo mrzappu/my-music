@@ -61,29 +61,21 @@ const DEBOUNCE_TIME_MS = 60000; // 1 minute delay per guild
 // ---------------------------------------------------------
 
 
-// --- HELPER FUNCTION: Activity Status Updater ---
+// --- HELPER FUNCTION: Activity Status Updater (MODIFIED) ---
 /**
  * Updates the bot's activity status based on the player state.
+ * MODIFIED to always show the default activity to avoid song title in global status.
  * @param {Client} client 
  * @param {KazagumoPlayer | null} player 
  */
 function updateActivity(client, player = null) {
   const defaultActivity = config.activity;
   
-  if (player && player.queue.current) {
-    // Activity when a song is playing
-    const activityName = `${player.queue.current.title} | ${player.queue.length} in queue`;
-    client.user.setActivity({
-      name: activityName,
-      type: ActivityType.Listening,
-    });
-  } else {
-    // Default activity when idle, queue empty, or disconnected
-    client.user.setActivity({
-      name: defaultActivity.name,
-      type: ActivityType[defaultActivity.type],
-    });
-  }
+  // Always use the default configured activity from config.js
+  client.user.setActivity({
+    name: defaultActivity.name,
+    type: ActivityType[defaultActivity.type],
+  });
 }
 // -----------------------------------------------------
 
@@ -475,8 +467,8 @@ kazagumo.on('playerCreate', (player) => {
 kazagumo.on('playerStart', async (player, track) => {
   console.log(`Now playing: ${track.title} in guild: ${player.guildId}`);
 
-  // --- NEW: Update Activity Status ---
-  updateActivity(client, player);
+  // --- MODIFIED: Update Activity Status (now only uses default activity) ---
+  updateActivity(client);
   // -----------------------------------
 
   // --- NEW: Update Voice Channel Status ---
@@ -583,7 +575,7 @@ kazagumo.on('playerEnd', async (player) => {
     // Destroy the player, which disconnects the bot from the voice channel
     player.destroy();
   } else if (player.data.get('twentyFourSeven') && player.queue.length === 0) {
-    // --- NEW: Reset Activity Status if queue is empty but 24/7 is on ---
+    // --- MODIFIED: Update Activity Status (now only uses default activity) ---
     updateActivity(client);
     // --- NEW: Update Voice Channel Status to Idle ---
     updateVoiceChannelStatus(player, null).catch(console.error);
@@ -632,7 +624,7 @@ kazagumo.on('playerResolveError', (player, track, message) => {
 kazagumo.on('playerDestroy', async (player) => {
   console.log(`Player destroyed for guild: ${player.guildId}`);
 
-  // --- NEW: Reset Activity Status ---
+  // --- MODIFIED: Reset Activity Status (now only uses default activity) ---
   updateActivity(client);
   // ----------------------------------
 
@@ -1008,13 +1000,35 @@ client.on('interactionCreate', async interaction => {
   if (!interaction.guild) return;
 
   const player = kazagumo.players.get(interaction.guildId);
-  if (!player) return interaction.reply({ content: `${config.emojis.warning} There is no music currently playing.`, flags: 64 });
-
   const member = interaction.member;
-  if (!member.voice.channel || member.voice.channel.id !== player.voiceId) {
-    return interaction.reply({ content: `${config.emojis.error} You must be in the same voice channel as the bot to use the controls.`, flags: 64 });
+  
+  // Helper function to safely reply and handle 10062 timeout errors
+  const handleTimeoutReply = async (content) => {
+    try {
+        await interaction.reply({ content, flags: 64 });
+    } catch (e) {
+        if (e.code === 10062) {
+            console.error(`Interaction timeout (10062) on button check reply from user ${interaction.user.tag} in guild ${interaction.guild.name}. Aborting command.`);
+            return true; // Indicate that the error was handled
+        }
+        throw e; // Re-throw other errors
+    }
+    return false; // Indicate that the reply succeeded
+  };
+
+  // 1. Player check
+  if (!player) {
+    if (await handleTimeoutReply(`${config.emojis.warning} There is no music currently playing.`)) return;
+    return;
   }
 
+  // 2. Voice channel check
+  if (!member.voice.channel || member.voice.channel.id !== player.voiceId) {
+    if (await handleTimeoutReply(`${config.emojis.error} You must be in the same voice channel as the bot to use the controls.`)) return;
+    return;
+  }
+  
+  // Defer only if initial checks pass
   await interaction.deferUpdate();
 
   try {
@@ -1066,7 +1080,7 @@ client.on('interactionCreate', async interaction => {
         break;
     }
   } catch (error) {
-    console.error('Button interaction error:', error);
+    console.error('Button interaction switch error:', error);
     await interaction.followUp({ content: `${config.emojis.error} An error occurred while processing your request.`, flags: 64 });
   }
 });
