@@ -1,7 +1,7 @@
 require('dotenv').config();
 const config = require('./config');
 // ADDED PermissionFlagsBits to imports
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ActivityType, StringSelectMenuBuilder, ChannelType, PermissionFlagsBits } = require('discord.js'); 
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ActivityType, ChannelType, PermissionFlagsBits } = require('discord.js'); 
 
 const express = require('express');
 const app = express();
@@ -101,9 +101,9 @@ async function songPlayNotification(player, track) {
             .setDescription(`**[${track.title}](${track.uri})**`)
             .setThumbnail(guild.iconURL({ dynamic: true })) // Add Server Icon
             .addFields(
-                { name: 'Server', value: `${guild.name}`, inline: true },
-                { name: 'Voice Channel', value: `${vcName}`, inline: true }, // Add VC Info
-                { name: 'Requested By', value: `${track.requester.tag}`, inline: true }
+                { name: 'Server', value: guild.name, inline: true },
+                { name: 'Voice Channel', value: vcName, inline: true }, // Add VC Info
+                { name: 'Requested By', value: track.requester.tag, inline: true }
             )
             .setColor('#4CAF50') 
             .setTimestamp();
@@ -252,12 +252,18 @@ client.on('clientReady', () => {
           .setMaxValue(100)),
     new SlashCommandBuilder().setName('247').setDescription('Toggles 24/7 mode (keeps bot in VC even when queue ends).'),
     new SlashCommandBuilder().setName('help').setDescription('Shows the list of commands.'),
-    // NEW: Seek Command
     new SlashCommandBuilder().setName('seek').setDescription('Seeks to a specific time in the current track.')
       .addStringOption(option =>
         option.setName('time')
           .setDescription('Time to seek to (e.g., 1:30 or 90s)')
           .setRequired(true)),
+    // NEW: Remove Command
+    new SlashCommandBuilder().setName('remove').setDescription('Removes a track from the queue by its number.')
+      .addIntegerOption(option =>
+        option.setName('number')
+          .setDescription('The queue number of the track to remove (use /queue).')
+          .setRequired(true)
+          .setMinValue(1)), // Queue numbers start at 1
   ].map(command => command.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(config.token);
@@ -577,7 +583,7 @@ kazagumo.on('playerDestroy', async (player) => {
   console.log(`Player destroyed for guild: ${player.guildId}`);
 
   // Send Music Stopped Notification (Feature 3)
-  const reason = player.queue.current ? `Queue ended after playing: ${player.queue.current.title}` : 'Queue ended.';
+  const reason = player.queue.current ? `Queue ended after playing: ${player.queue.current.title}` : 'Queue ended or bot manually stopped.';
   musicStoppedNotification(player.guildId, player.voiceId, reason);
 
   try {
@@ -655,7 +661,7 @@ client.on('interactionCreate', async interaction => {
   const permissions = voiceChannel?.permissionsFor(client.user);
 
   // Check for VC
-  if (['play', 'skip', 'stop', 'queue', 'nowplaying', 'pause', 'resume', 'shuffle', 'loop', 'volume', '247', 'seek'].includes(commandName) && !voiceChannel) {
+  if (['play', 'skip', 'stop', 'queue', 'nowplaying', 'pause', 'resume', 'shuffle', 'loop', 'volume', '247', 'seek', 'remove'].includes(commandName) && !voiceChannel) {
     return interaction.reply({ content: `${config.emojis.error} You must be in a voice channel to use this command.`, flags: 64 }); 
   }
 
@@ -673,7 +679,7 @@ client.on('interactionCreate', async interaction => {
         .setTitle(`${client.user.username} Commands`)
         .setDescription('Use **/** for all commands.')
         .addFields(
-          { name: '🎵 Music Commands', value: '`/play`, `/skip`, `/stop`, `/pause`, `/resume`, `/queue`, `/nowplaying`, `/shuffle`, `/loop`, `/volume`, `/247`, `/seek`' },
+          { name: '🎵 Music Commands', value: '`/play`, `/skip`, `/stop`, `/pause`, `/resume`, `/queue`, `/nowplaying`, `/shuffle`, `/loop`, `/volume`, `/247`, `/seek`, `/remove`' },
           { name: 'ℹ️ Utility', value: '`/help`' }
         )
         .setColor('#00ff00')
@@ -824,12 +830,14 @@ client.on('interactionCreate', async interaction => {
         break;
 
       case 'nowplaying':
-        if (!player.queue.current) {
+        // Variable is safe here because it's inside a case block
+        const currentTrack = player.queue.current; 
+
+        if (!currentTrack) {
           return interaction.reply({ content: `${config.emojis.error} No music is currently playing.`, flags: 64 });
         }
 
-        const currentTrack = player.queue.current;
-        // FIX: Use KazagumoTrack.formatedLength
+        // FIX: Use currentTrack instead of currentTrack
         const durationString = currentTrack.duration ? KazagumoTrack.formatedLength(currentTrack.duration) : 'N/A';
         const positionString = player.position ? KazagumoTrack.formatedLength(player.position) : '0:00';
 
@@ -881,12 +889,12 @@ client.on('interactionCreate', async interaction => {
         interaction.reply({ content: `${config.emojis.success} 24/7 mode is now **${newState}**. The bot will ${newState === 'enabled' ? 'stay in the voice channel.' : 'disconnect when the queue is empty.'}` });
         break;
         
-      // NEW: Seek Command Handler
+      // NEW: Seek Command Handler - FIX: Variable renamed to 'seekTrack'
       case 'seek':
         const timeInput = options.getString('time');
-        const currentTrack = player.queue.current;
+        const seekTrack = player.queue.current; 
 
-        if (!currentTrack || currentTrack.isStream) {
+        if (!seekTrack || seekTrack.isStream) {
             return interaction.reply({ content: `${config.emojis.error} Cannot seek on a live stream.`, flags: 64 });
         }
         
@@ -897,7 +905,7 @@ client.on('interactionCreate', async interaction => {
         }
         
         // Convert to seconds for display
-        const totalDurationMs = currentTrack.duration;
+        const totalDurationMs = seekTrack.duration; // Use seekTrack
         const seekTimeSeconds = Math.floor(seekTimeMs / 1000);
         const totalDurationSeconds = Math.floor(totalDurationMs / 1000);
 
@@ -910,6 +918,36 @@ client.on('interactionCreate', async interaction => {
         const seekTimeFormatted = KazagumoTrack.formatedLength(seekTimeMs);
         
         interaction.reply({ content: `${config.emojis.seek} Seeked to **${seekTimeFormatted}** in the track.` });
+        break;
+
+      // NEW: Remove Command Handler
+      case 'remove':
+        const trackNumber = options.getInteger('number');
+        const queueLength = player.queue.length;
+
+        if (queueLength === 0) {
+            return interaction.reply({ content: `${config.emojis.warning} The queue is empty. There are no tracks to remove.`, flags: 64 });
+        }
+
+        // Check if the number is within valid range (1 to queue length)
+        if (trackNumber < 1 || trackNumber > queueLength) {
+            return interaction.reply({ content: `${config.emojis.error} Invalid track number. The queue has ${queueLength} tracks.`, flags: 64 });
+        }
+
+        // trackNumber is 1-based, array index is 0-based.
+        const trackIndex = trackNumber - 1; 
+        
+        // Get the track before splicing it out
+        const trackToRemove = player.queue[trackIndex]; 
+        
+        // Remove the track at the specified index
+        player.queue.splice(trackIndex, 1);
+
+        const removedEmbed = new EmbedBuilder()
+            .setDescription(`${config.emojis.success} Removed track **#${trackNumber}** from the queue: [${trackToRemove.title}](${trackToRemove.uri}).`)
+            .setColor('#FF5733');
+            
+        interaction.reply({ embeds: [removedEmbed] });
         break;
     }
   } catch (error) {
@@ -1060,5 +1098,4 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-// FIX: Renamed 'ready' to 'clientReady' here as well
 client.login(config.token);
