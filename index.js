@@ -54,9 +54,9 @@ const MUSIC_STOPPED_CHANNEL_ID = '1393633652537163907';
 // Channel ID for bot left server notifications
 const BOT_LEFT_SERVER_CHANNEL_ID = '1393633926031085669';
 // NEW: Lavalink Status Notification Channel ID
-const LAVALINK_STATUS_CHANNEL_ID = '1389121367332622337'; // Added Channel ID
+const LAVALINK_STATUS_CHANNEL_ID = '1389121367332622337'; 
 
-// --- UTILITY FUNCTION: msToTime (FIX for KazagumoTrack.formatLength Error) ---
+// --- UTILITY FUNCTION: msToTime ---
 /**
  * Converts milliseconds to a human-readable time string (M:SS or H:MM:SS).
  * This replaces the error-prone KazagumoTrack.formatLength.
@@ -82,6 +82,50 @@ function msToTime(duration) {
 }
 // -----------------------------------
 
+// --- NEW UTILITY FUNCTION: clearBotMessages ---
+/**
+ * Clears recent bot messages (up to 100) from a specified text channel.
+ * This is called when the bot leaves the VC or the music stops.
+ * @param {string} channelId - The ID of the text channel.
+ */
+async function clearBotMessages(channelId) {
+    const channel = client.channels.cache.get(channelId);
+    if (!channel || !channel.isTextBased()) {
+        console.warn(`Attempted to clear messages in non-text channel or missing channel: ${channelId}`);
+        return;
+    }
+
+    try {
+        // Check for MANAGE_MESSAGES permission
+        const permissions = channel.permissionsFor(client.user);
+        if (!permissions.has(PermissionFlagsBits.ManageMessages)) {
+            console.warn(`Bot lacks MANAGE_MESSAGES permission in channel ${channel.name} to clear messages.`);
+            return;
+        }
+
+        // Fetch up to 100 recent messages
+        const messages = await channel.messages.fetch({ limit: 100 });
+        
+        // Filter messages sent by the bot
+        const botMessages = messages.filter(m => m.author.id === client.user.id);
+        
+        if (botMessages.size > 0) {
+            // Bulk delete the filtered messages (messages older than 14 days will fail gracefully)
+            await channel.bulkDelete(botMessages, true);
+            console.log(`Successfully cleared ${botMessages.size} bot messages from channel: ${channel.id}`);
+        } else {
+            console.log(`No recent bot messages found to clear in channel: ${channel.id}`);
+        }
+    } catch (error) {
+        // Error code 50034 is for messages older than 14 days which cannot be bulk deleted.
+        if (error.code === 50034) {
+             console.warn(`Failed to bulk delete messages due to age limit (over 14 days old) in channel: ${channelId}`);
+        } else {
+            console.error(`Error clearing bot messages in channel ${channelId}:`, error.message);
+        }
+    }
+}
+// ----------------------------------------------
 
 // --- FEATURE 1: Song Play Notification ---
 /**
@@ -612,6 +656,7 @@ kazagumo.on('playerResolveError', (player, track, message) => {
   }
 });
 
+// MODIFIED: Added call to clearBotMessages(player.textId)
 kazagumo.on('playerDestroy', async (player) => {
   console.log(`Player destroyed for guild: ${player.guildId}`);
 
@@ -619,23 +664,17 @@ kazagumo.on('playerDestroy', async (player) => {
   const reason = player.queue.current ? `Queue ended after playing: ${player.queue.current.title}` : 'Queue ended or bot manually stopped.';
   musicStoppedNotification(player.guildId, player.voiceId, reason);
 
-  try {
-    const message = player.data.get('currentMessage');
-    if (message && message.editable) {
-      try {
-        if (message.components && message.components[0] && message.components[0].components) {
-          const disabledButtons = message.components[0].components.map(button => {
-            return ButtonBuilder.from(button).setDisabled(true);
-          });
-          await message.edit({ components: [new ActionRowBuilder().addComponents(disabledButtons)] });
-        }
-      } catch (error) {
-        console.error('Error disabling buttons in playerDestroy:', error);
-      }
-    }
-  } catch (error) {
-    console.error('Error in playerDestroy message cleanup:', error);
-  }
+  // --- NEW: Clear Chat Feature (Clears all bot messages) ---
+  // Give Discord a moment for other cleanup to finish, then clear messages.
+  await new Promise(resolve => setTimeout(resolve, 500)); 
+  await clearBotMessages(player.textId);
+  // -----------------------------
+  
+  // Clean up player data
+  player.data.delete('currentMessage');
+  player.data.delete('previousMessage');
+
+  // Removed manual message/button cleanup as clearBotMessages handles it
 });
 
 // Helper function to get or create player
@@ -1088,24 +1127,10 @@ client.on('interactionCreate', async interaction => {
         } else {
             // If no more tracks, destroy the player
             player.destroy();
-            // Edit the last message to disable buttons after stop
-            if (interaction.message && interaction.message.editable) {
-                const disabledButtons = interaction.message.components[0].components.map(button => 
-                    ButtonBuilder.from(button).setDisabled(true)
-                );
-                await interaction.message.edit({ components: [new ActionRowBuilder().addComponents(disabledButtons)] });
-            }
         }
         break;
       case 'stop':
         player.destroy();
-        // Edit the last message to disable buttons
-        if (interaction.message && interaction.message.editable) {
-            const disabledButtons = interaction.message.components[0].components.map(button => 
-                ButtonBuilder.from(button).setDisabled(true)
-            );
-            await interaction.message.edit({ components: [new ActionRowBuilder().addComponents(disabledButtons)] });
-        }
         break;
       case 'loop':
         // Cycle through loop modes: none -> track -> queue -> none
