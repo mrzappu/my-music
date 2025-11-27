@@ -5,12 +5,18 @@ module.exports = {
   enablePrefix: true, 
   
   // Owner ID for notifications (You must define OWNER_ID in your .env or replace this)
-  OWNER_ID: process.env.OWNER_ID || '809441570818359307',
+  OWNER_ID: process.env.OWNER_ID || 'YOUR_DISCORD_USER_ID',
+
+  // Bot Activity - RE-ADDED TO FIX THE 'TypeError'
+  activity: {
+    name: 'INFINITY MUSIC',
+    type: 'LISTENING' // PLAYING, STREAMING, LISTENING, WATCHING, COMPETING
+  },
 
   // Lavalink Configuration
-  // NOTE: Your previous error log showed an 'Unhandled error' for 'Harmonix-NODE2'.
-  // Please ensure your Lavalink server details (URL, Port, Auth) are correct and the server is running.
   lavalink: {
+    // Note: Your error log shows 'Harmonix-NODE2' is attempting to connect.
+    // Ensure your Lavalink server details (URL, Port, Auth) are correct.
     nodes: [{
       name: 'Harmonix-NODE2', 
       url: 'zac.hidencloud.com:24627', 
@@ -31,12 +37,11 @@ module.exports = {
     server: process.env.SUPPORT_SERVER || 'https://discord.gg/your-support-server-invite'
   },
 
-  // Emojis - ALL EMOJI IDs HAVE BEEN ADDED
+  // Emojis - All your custom animated IDs
   emojis: {
-    // Animated Music Emojis (Your custom IDs are used here)
     play: '<a:play:1443619986907336785>',
     pause: '<a:pause:1443620907233837066>',
-    resume: '<a:resume:1443619986907336785>', // Same as play, as requested
+    resume: '<a:resume:1443619986907336785>',
     skip: '<a:skip:1443619983409287221>',
     stop: '<a:stop:1443619980859015354>',
     loop: '<a:loop:1443619976400343100>',
@@ -48,7 +53,7 @@ module.exports = {
     remove: '<a:remove:1443622707873976411>', 
     clear: '<a:clear:1443622995359694849>', 
     
-    // Standard Utility/Status Emojis (Kept standard for compatibility)
+    // Standard Utility/Status Emojis 
     success: '✅',
     error: '❌',
     warn: '⚠️',
