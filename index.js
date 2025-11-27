@@ -53,6 +53,8 @@ const BOT_JOIN_NOTIFICATION_CHANNEL_ID = '1411369682459427006';
 const MUSIC_STOPPED_CHANNEL_ID = '1393633652537163907';
 // Channel ID for bot left server notifications
 const BOT_LEFT_SERVER_CHANNEL_ID = '1393633926031085669';
+// NEW: Lavalink Status Notification Channel ID
+const LAVALINK_STATUS_CHANNEL_ID = '1389121367332622337'; // Added Channel ID
 
 // --- FEATURE 1: Song Play Notification ---
 /**
@@ -175,6 +177,36 @@ async function musicStoppedNotification(guildId, voiceId, reason = 'Bot disconne
 }
 // ---------------------------------------------
 
+// --- NEW FEATURE: Lavalink Status Notification Function ---
+/**
+ * Sends a notification to the designated channel when a Lavalink node connects or disconnects.
+ * @param {string} name 
+ * @param {boolean} isError 
+ * @param {string} message 
+ */
+async function lavalinkStatusNotification(name, isError, message) {
+    try {
+        const notificationChannel = client.channels.cache.get(LAVALINK_STATUS_CHANNEL_ID);
+        if (!notificationChannel || !notificationChannel.isTextBased()) {
+            console.warn("Lavalink status channel not found or is not a text channel. ID: " + LAVALINK_STATUS_CHANNEL_ID);
+            return;
+        }
+
+        const embed = new EmbedBuilder()
+            .setTitle(isError ? '🚨 Lavalink Node Down' : '✅ Lavalink Node Up')
+            .setDescription(`**Node:** \`${name}\``)
+            .addFields(
+                { name: 'Status', value: message, inline: false }
+            )
+            .setColor(isError ? '#FF0000' : '#00FF00')
+            .setTimestamp();
+            
+        await notificationChannel.send({ embeds: [embed] }).catch(err => console.error(`Failed to send Lavalink status message: ${err.message}`));
+    } catch (error) {
+        console.error('Error in lavalinkStatusNotification:', error);
+    }
+}
+// -----------------------------------------------------
 
 // Client Ready Event (renamed to clientReady to avoid deprecation warning)
 client.on('clientReady', () => {
@@ -220,6 +252,12 @@ client.on('clientReady', () => {
           .setMaxValue(100)),
     new SlashCommandBuilder().setName('247').setDescription('Toggles 24/7 mode (keeps bot in VC even when queue ends).'),
     new SlashCommandBuilder().setName('help').setDescription('Shows the list of commands.'),
+    // NEW: Seek Command
+    new SlashCommandBuilder().setName('seek').setDescription('Seeks to a specific time in the current track.')
+      .addStringOption(option =>
+        option.setName('time')
+          .setDescription('Time to seek to (e.g., 1:30 or 90s)')
+          .setRequired(true)),
   ].map(command => command.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(config.token);
@@ -366,12 +404,25 @@ client.on('guildDelete', async (guild) => {
 });
 // --------------------------------------------------------
 
-// Shoukaku (Lavalink) Events
-shoukaku.on('ready', (name) => console.log(`Lavalink Node ${name}: Ready`));
-shoukaku.on('error', (name, error) => console.error(`Lavalink Node ${name}: Error - ${error.message}`));
-shoukaku.on('close', (name, code, reason) => console.warn(`Lavalink Node ${name}: Closed - Code ${code} | Reason: ${reason || 'No reason'}`));
-shoukaku.on('disconnect', (name, players) => console.warn(`Lavalink Node ${name}: Disconnected | Affected players: ${players.size}`));
+// --- NEW: Shoukaku (Lavalink) Events with Notification Function ---
+shoukaku.on('ready', (name) => {
+    console.log(`Lavalink Node ${name}: Ready`);
+    lavalinkStatusNotification(name, false, 'Connection successful and node is ready.');
+});
+shoukaku.on('error', (name, error) => {
+    console.error(`Lavalink Node ${name}: Error - ${error.message}`);
+    lavalinkStatusNotification(name, true, `Error: ${error.message}`);
+});
+shoukaku.on('close', (name, code, reason) => {
+    console.warn(`Lavalink Node ${name}: Closed - Code ${code} | Reason: ${reason || 'No reason'}`);
+    lavalinkStatusNotification(name, true, `Connection closed. Code: ${code} | Reason: ${reason || 'Unknown'}`);
+});
+shoukaku.on('disconnect', (name, players) => {
+    console.warn(`Lavalink Node ${name}: Disconnected | Affected players: ${players.size}`);
+    lavalinkStatusNotification(name, true, `Node disconnected. Affected players: ${players.size}.`);
+});
 shoukaku.on('debug', (name, info) => console.debug(`Lavalink Node ${name}: Debug - ${info}`));
+// ------------------------------------------------------------------
 
 // Kazagumo (Music Player) Events
 kazagumo.on('playerCreate', (player) => {
@@ -569,6 +620,32 @@ async function getOrCreatePlayer(interaction, voiceChannel) {
   return player;
 }
 
+// Helper function to convert time string (M:SS or SSs) to milliseconds
+function timeToMilliseconds(timeString) {
+  const parts = timeString.split(':');
+  let milliseconds = 0;
+
+  if (parts.length === 1) {
+    // Format: SSs, e.g., '90s'
+    const secondsMatch = timeString.match(/^(\d+)s$/i);
+    if (secondsMatch) {
+      milliseconds = parseInt(secondsMatch[1]) * 1000;
+    } else {
+      // Assume raw seconds if no 's' is present, e.g., '90'
+      milliseconds = parseInt(timeString) * 1000;
+    }
+  } else if (parts.length === 2) {
+    // Format: M:SS, e.g., '1:30'
+    const minutes = parseInt(parts[0]);
+    const seconds = parseInt(parts[1]);
+    milliseconds = (minutes * 60 + seconds) * 1000;
+  } else {
+    // Invalid format
+    return null;
+  }
+  return milliseconds;
+}
+
 // Slash Command Handler
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
@@ -578,7 +655,7 @@ client.on('interactionCreate', async interaction => {
   const permissions = voiceChannel?.permissionsFor(client.user);
 
   // Check for VC
-  if (['play', 'skip', 'stop', 'queue', 'nowplaying', 'pause', 'resume', 'shuffle', 'loop', 'volume', '247'].includes(commandName) && !voiceChannel) {
+  if (['play', 'skip', 'stop', 'queue', 'nowplaying', 'pause', 'resume', 'shuffle', 'loop', 'volume', '247', 'seek'].includes(commandName) && !voiceChannel) {
     return interaction.reply({ content: `${config.emojis.error} You must be in a voice channel to use this command.`, flags: 64 }); 
   }
 
@@ -588,7 +665,7 @@ client.on('interactionCreate', async interaction => {
     return interaction.reply({ content: `${config.emojis.error} I need the **CONNECT** and **SPEAK** permissions in your voice channel.`, flags: 64 });
   }
 
-  // Handle commands that don't require an existing player (other than 'play')
+  // Handle commands that don't require an existing player (other than 'play' and 'help')
   if (['help', 'play'].includes(commandName)) {
     // 'help' command
     if (commandName === 'help') {
@@ -596,7 +673,7 @@ client.on('interactionCreate', async interaction => {
         .setTitle(`${client.user.username} Commands`)
         .setDescription('Use **/** for all commands.')
         .addFields(
-          { name: '🎵 Music Commands', value: '`/play`, `/skip`, `/stop`, `/pause`, `/resume`, `/queue`, `/nowplaying`, `/shuffle`, `/loop`, `/volume`, `/247`' },
+          { name: '🎵 Music Commands', value: '`/play`, `/skip`, `/stop`, `/pause`, `/resume`, `/queue`, `/nowplaying`, `/shuffle`, `/loop`, `/volume`, `/247`, `/seek`' },
           { name: 'ℹ️ Utility', value: '`/help`' }
         )
         .setColor('#00ff00')
@@ -802,6 +879,37 @@ client.on('interactionCreate', async interaction => {
         const newState = player.data.get('twentyFourSeven') ? 'enabled' : 'disabled';
         
         interaction.reply({ content: `${config.emojis.success} 24/7 mode is now **${newState}**. The bot will ${newState === 'enabled' ? 'stay in the voice channel.' : 'disconnect when the queue is empty.'}` });
+        break;
+        
+      // NEW: Seek Command Handler
+      case 'seek':
+        const timeInput = options.getString('time');
+        const currentTrack = player.queue.current;
+
+        if (!currentTrack || currentTrack.isStream) {
+            return interaction.reply({ content: `${config.emojis.error} Cannot seek on a live stream.`, flags: 64 });
+        }
+        
+        const seekTimeMs = timeToMilliseconds(timeInput);
+        
+        if (seekTimeMs === null || isNaN(seekTimeMs)) {
+            return interaction.reply({ content: `${config.emojis.error} Invalid time format. Use M:SS (e.g., 1:30) or SSs (e.g., 90s).`, flags: 64 });
+        }
+        
+        // Convert to seconds for display
+        const totalDurationMs = currentTrack.duration;
+        const seekTimeSeconds = Math.floor(seekTimeMs / 1000);
+        const totalDurationSeconds = Math.floor(totalDurationMs / 1000);
+
+        if (seekTimeMs < 0 || seekTimeMs > totalDurationMs) {
+            return interaction.reply({ content: `${config.emojis.error} Seek time must be between 0 and ${KazagumoTrack.formatedLength(totalDurationMs)}.`, flags: 64 });
+        }
+
+        await player.seek(seekTimeMs);
+        
+        const seekTimeFormatted = KazagumoTrack.formatedLength(seekTimeMs);
+        
+        interaction.reply({ content: `${config.emojis.seek} Seeked to **${seekTimeFormatted}** in the track.` });
         break;
     }
   } catch (error) {
