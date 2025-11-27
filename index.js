@@ -929,14 +929,13 @@ client.on('messageCreate', async message => {
     // 1. Construct the Embed
     const aboutEmbed = new EmbedBuilder()
       .setTitle(`👋 Hello! I am ${client.user.username}.`)
-      .setDescription(`I am a powerful, feature-rich Discord music bot built using **discord.js** and **Kazagumo/Lavalink**.\n\nUse the **/** command to see all my features, or click the buttons below!`)
+      .setDescription(`I am a powerful, feature-rich Discord music bot.\n\nUse the **/** command to see all my features, or click the buttons below!`) // MODIFIED DESCRIPTION
       .setThumbnail(client.user.displayAvatarURL({ dynamic: true }))
       .addFields(
-        { name: `${config.emojis.servers} Servers`, value: `\`${client.guilds.cache.size}\``, inline: true },
-        // Use client.users.cache.size for total users bot can see
-        { name: `${config.emojis.users} Users`, value: `\`${client.users.cache.size}\``, inline: true }, 
-        { name: `${config.emojis.nowplaying} Developer`, value: '`Rick_Grimes`', inline: true },
-        { name: `${config.emojis.node} Lavalink Node`, value: `\`${config.lavalink.nodes[0].name}\``, inline: true },
+        { name: `🌐 Servers`, value: `\`${client.guilds.cache.size}\``, inline: true }, // Used standard emoji
+        { name: `👥 Users`, value: `\`${client.users.cache.size}\``, inline: true }, // Used standard emoji
+        { name: `🎵 Developer`, value: '`Rick_Grimes`', inline: true }, // Used standard emoji
+        // REMOVED LAVALINK NODE FIELD
       )
       .setColor('#00FFFF')
       .setFooter({ text: 'Thank you for choosing me!', iconURL: client.user.displayAvatarURL({ dynamic: true }) })
