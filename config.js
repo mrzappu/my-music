@@ -12,12 +12,6 @@ module.exports = {
     name: 'INFINITY MUSIC',
     type: 'LISTENING' // PLAYING, STREAMING, LISTENING, WATCHING, COMPETING
   },
-  
-  // NEW: Configuration for Music Control
-  musicControl: {
-    // Role required to use commands like /skip, /stop, /volume (in addition to requester/admin)
-    djRoleName: 'DJ', 
-  },
 
   // Lavalink Configuration
   lavalink: {
