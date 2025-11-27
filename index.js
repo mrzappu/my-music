@@ -54,6 +54,33 @@ const MUSIC_STOPPED_CHANNEL_ID = '1393633652537163907';
 // Channel ID for bot left server notifications
 const BOT_LEFT_SERVER_CHANNEL_ID = '1393633926031085669';
 
+
+// --- NEW HELPER FUNCTION: Activity Status Updater ---
+/**
+ * Updates the bot's activity status based on the player state.
+ * @param {Client} client 
+ * @param {KazagumoPlayer | null} player 
+ */
+function updateActivity(client, player = null) {
+  const defaultActivity = config.activity;
+  
+  if (player && player.queue.current) {
+    // Activity when a song is playing
+    const activityName = `${player.queue.current.title} | ${player.queue.length} in queue`;
+    client.user.setActivity({
+      name: activityName,
+      type: ActivityType.Listening,
+    });
+  } else {
+    // Default activity when idle, queue empty, or disconnected
+    client.user.setActivity({
+      name: defaultActivity.name,
+      type: ActivityType[defaultActivity.type],
+    });
+  }
+}
+// -----------------------------------------------------
+
 // --- FEATURE 1: Song Play Notification ---
 /**
  * Sends a direct message to the bot owner and a message to the official song notification channel when a track starts playing.
@@ -180,10 +207,9 @@ async function musicStoppedNotification(guildId, voiceId, reason = 'Bot disconne
 client.on('clientReady', () => {
   console.log(`${client.user.tag} is online!`);
 
-  client.user.setActivity({
-    name: config.activity.name,
-    type: ActivityType[config.activity.type],
-  });
+  // --- MODIFIED: Initial Activity Setup (using the new helper) ---
+  updateActivity(client);
+  // ---------------------------------------------------------------
 
   // Register Slash Commands
   const commands = [
@@ -382,6 +408,10 @@ kazagumo.on('playerCreate', (player) => {
 kazagumo.on('playerStart', async (player, track) => {
   console.log(`Now playing: ${track.title} in guild: ${player.guildId}`);
 
+  // --- NEW: Update Activity Status ---
+  updateActivity(client, player);
+  // -----------------------------------
+
   // --- NEW: Call the song play notification function (sends DM and Channel msg) ---
   songPlayNotification(player, track);
   // -------------------------------------------------------------------------------
@@ -481,6 +511,9 @@ kazagumo.on('playerEnd', async (player) => {
 
     // Destroy the player, which disconnects the bot from the voice channel
     player.destroy();
+  } else if (player.data.get('twentyFourSeven') && player.queue.length === 0) {
+    // --- NEW: Reset Activity Status if queue is empty but 24/7 is on ---
+    updateActivity(client);
   }
 });
 
@@ -524,6 +557,10 @@ kazagumo.on('playerResolveError', (player, track, message) => {
 
 kazagumo.on('playerDestroy', async (player) => {
   console.log(`Player destroyed for guild: ${player.guildId}`);
+
+  // --- NEW: Reset Activity Status ---
+  updateActivity(client);
+  // ----------------------------------
 
   // --- NEW: Send Music Stopped Notification (Feature 3) ---
   const reason = player.queue.current ? `Queue ended after playing: ${player.queue.current.title}` : 'Queue ended.';
