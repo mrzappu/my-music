@@ -5,7 +5,7 @@ module.exports = {
   enablePrefix: true, 
   
   // Owner ID for notifications (You must define OWNER_ID in your .env or replace this)
-  OWNER_ID: process.env.OWNER_ID || 'YOUR_DISCORD_USER_ID',
+  OWNER_ID: process.env.OWNER_ID || '809441570818359307',
 
   // Bot Activity - RE-ADDED TO FIX THE 'TypeError'
   activity: {
