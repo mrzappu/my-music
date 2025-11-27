@@ -53,11 +53,11 @@ module.exports = {
     loop: '<a:loop:1443619976400343100>',
     volume: '<a:volume:1443619978636034099>',
     nowplaying: '<a:np:1443621459057578005>',
-    queue: '<a:queue:YOUR_EMOJI_ID>',
+    queue: '<a:queue:1443622469423464549>',
     shuffle: '<a:shuffle:1443619973216862461>',
-    seek: '<a:seek:YOUR_EMOJI_ID>',
-    remove: '<a:remove:YOUR_EMOJI_ID>',
-    clear: '<a:clear:YOUR_EMOJI_ID>',
+    seek: '<a:seek:1393210917755424789>',
+    remove: '<a:remove:1443622707873976411>',
+    clear: '<a:clear:1443622995359694849>',
     
     // Standard Utility/Status Emojis (You can change these too if you have animated ones)
     success: '✅',
