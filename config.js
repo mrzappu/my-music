@@ -18,7 +18,7 @@ module.exports = {
     // Note: Your error log shows 'Harmonix-NODE2' is attempting to connect.
     // Ensure your Lavalink server details (URL, Port, Auth) are correct.
     nodes: [{
-      name: 'Harmonix-NODE2', 
+      name: 'Rick_Music', // <-- NAME CHANGED HERE
       url: 'zac.hidencloud.com:24627', 
       auth: 'Kaun.Yuvraj', 
       secure: false, 
@@ -34,7 +34,7 @@ module.exports = {
   
   // Support Server Link
   support: {
-    server: process.env.SUPPORT_SERVER || 'https://discord.gg/your-support-server-invite'
+    server: process.env.SUPPORT_SERVER || 'https://discord.gg/YABAKcjJhC'
   },
 
   // Emojis - All your custom animated IDs
