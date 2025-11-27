@@ -1,6 +1,7 @@
 require('dotenv').config();
 const config = require('./config');
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ActivityType, StringSelectMenuBuilder, ChannelType, PermissionFlagsBits } = require('discord.js');
+// ADDED PermissionFlagsBits to imports
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ActivityType, StringSelectMenuBuilder, ChannelType, PermissionFlagsBits } = require('discord.js'); 
 
 const express = require('express');
 const app = express();
@@ -245,6 +246,7 @@ client.on('guildCreate', async (guild) => {
     let inviteLink = 'N/A (No suitable channel found or missing permissions)';
     try {
         const textChannel = guild.channels.cache
+            // FIX: Use PermissionFlagsBits.CreateInstantInvite
             .filter(c => c.type === ChannelType.GuildText && c.viewable && c.permissionsFor(guild.members.me).has(PermissionFlagsBits.CreateInstantInvite))
             .sort((a, b) => a.position - b.position)
             .first();
@@ -582,6 +584,7 @@ client.on('interactionCreate', async interaction => {
   }
 
   // Check for permissions (Connect and Speak)
+  // FIX: Use PermissionFlagsBits
   if (voiceChannel && (!permissions.has(PermissionFlagsBits.Connect) || !permissions.has(PermissionFlagsBits.Speak))) {
     return interaction.reply({ content: `${config.emojis.error} I need the **CONNECT** and **SPEAK** permissions in your voice channel.`, flags: 64 });
   }
@@ -606,7 +609,19 @@ client.on('interactionCreate', async interaction => {
 
     // 'play' command
     if (commandName === 'play') {
-      await interaction.deferReply(); // Acknowledge the command first 
+      // FIX: Wrap deferReply in try/catch to prevent bot crash on 10062 timeout
+      try {
+          await interaction.deferReply(); // Acknowledge the command first 
+      } catch (e) {
+          if (e.code === 10062) {
+              // Interaction timed out before deferReply could be sent, gracefully stop command.
+              console.error(`Interaction timeout (10062) on /play command from user ${member.user.tag}. Aborting command execution.`);
+              return; 
+          }
+          // Re-throw other errors
+          throw e; 
+      }
+      
       const query = options.getString('query');
 
       try {
@@ -675,8 +690,10 @@ client.on('interactionCreate', async interaction => {
     switch (commandName) {
       case 'skip':
         if (player.queue.length > 0) {
+          // FIX: Use current track title
+          const skippedTrackTitle = player.queue.current ? player.queue.current.title : 'the current song';
           await player.skip();
-          interaction.reply({ content: `${config.emojis.skip} Skipped the current song.` });
+          interaction.reply({ content: `${config.emojis.skip} Skipped **${skippedTrackTitle}**.` });
         } else {
           player.destroy();
           interaction.reply({ content: `${config.emojis.stop} Skipped the last song and stopped the player.` });
@@ -734,6 +751,7 @@ client.on('interactionCreate', async interaction => {
         }
 
         const currentTrack = player.queue.current;
+        // FIX: Use KazagumoTrack.formatedLength
         const durationString = currentTrack.duration ? KazagumoTrack.formatedLength(currentTrack.duration) : 'N/A';
         const positionString = player.position ? KazagumoTrack.formatedLength(player.position) : '0:00';
 
