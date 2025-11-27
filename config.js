@@ -12,13 +12,19 @@ module.exports = {
     name: 'INFINITY MUSIC',
     type: 'LISTENING' // PLAYING, STREAMING, LISTENING, WATCHING, COMPETING
   },
+  
+  // NEW: Configuration for Music Control
+  musicControl: {
+    // Role required to use commands like /skip, /stop, /volume (in addition to requester/admin)
+    djRoleName: 'DJ', 
+  },
 
   // Lavalink Configuration
   lavalink: {
     // Note: Your error log shows 'Harmonix-NODE2' is attempting to connect.
     // Ensure your Lavalink server details (URL, Port, Auth) are correct.
     nodes: [{
-      name: 'Rick_Music', // <-- NAME CHANGED HERE
+      name: 'Harmonix-NODE2', 
       url: 'zac.hidencloud.com:24627', 
       auth: 'Kaun.Yuvraj', 
       secure: false, 
@@ -34,7 +40,7 @@ module.exports = {
   
   // Support Server Link
   support: {
-    server: process.env.SUPPORT_SERVER || 'https://discord.gg/YABAKcjJhC'
+    server: process.env.SUPPORT_SERVER || 'https://discord.gg/your-support-server-invite'
   },
 
   // Emojis - All your custom animated IDs
