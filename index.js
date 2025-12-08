@@ -395,7 +395,6 @@ function formatTime(ms) {
 }
 
 // Function to send a notification to the owner/console about Lavalink status
-// This is a placeholder function, you may want to enhance this to DM the owner.
 function lavalinkStatusNotification(nodeName, isError, message) {
     const status = isError ? '❌ ERROR' : '✅ SUCCESS';
     console.log(`[LAVALINK STATUS] Node: ${nodeName} | Status: ${status} | Message: ${message}`);
