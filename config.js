@@ -26,12 +26,11 @@ module.exports = {
 
   // Lavalink Configuration
   lavalink: {
-    // ⚠️ CRITICAL: Ensure the URL, Port, and Auth are absolutely correct 
-    // for the 'Rick_Music' node to prevent the ERR_UNHANDLED_ERROR crash.
+    // 🚀 UPDATED LAVALINK NODE CONFIGURATION
     nodes: [{
-      name: 'Rick_Music', // <-- NAME CHANGED HERE
-      url: 'zac.hidencloud.com:24627', 
-      auth: 'Kaun.Yuvraj', 
+      name: 'Void_Music_Node', // Changed the name to reflect the new host
+      url: 'nexus.voidhosting.vip:6004', 
+      auth: 'cocaine', 
       secure: false, 
     }],
     defaultSearchEngine: 'youtube_music'
@@ -48,17 +47,5 @@ module.exports = {
     server: process.env.SUPPORT_SERVER || 'https://discord.gg/YABAKcjJhC'
   },
 
-  // Emojis - All your custom animated IDs (Ensure these IDs are valid)
-  emojis: {
-    play: '<a:play:1443619986907336785>',
-    pause: '<a:pause:1443620907233837066>',
-    resume: '<a:resume:1443619986907336785>',
-    skip: '<a:skip:1443619983409287221>',
-    stop: '<a:stop:1443621457007353984>',
-    queue: '<a:queue:1443621987399946255>',
-    error: '❌',
-    loop: '🔁',
-    shuffle: '🔀',
-    playlist: '🎶'
-  }
+  //...
 };
