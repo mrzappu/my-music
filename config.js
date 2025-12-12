@@ -19,8 +19,8 @@ module.exports = {
     // Ensure your Lavalink server details (URL, Port, Auth) are correct.
     nodes: [{
       name: 'Rick_Music', // <-- NAME CHANGED HERE
-      url: 'zac.hidencloud.com:24627', 
-      auth: 'Kaun.Yuvraj', 
+      url: 'nexus.voidhosting.vip:6004', 
+      auth: 'cocaine', 
       secure: false, 
     }],
     defaultSearchEngine: 'youtube_music'
