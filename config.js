@@ -4,40 +4,36 @@ module.exports = {
   prefix: '!',
   enablePrefix: true, 
   
-  // Owner ID for notifications (You must define OWNER_ID in your .env or replace this)
-  OWNER_ID: process.env.OWNER_ID || '809441570818359307',
+  OWNER_ID: process.env.OWNER_ID || '944870216733716481',
+  GUILD_ID: '1435919529745059883', // Added for Slash Command registration
 
-  // Bot Activity - RE-ADDED TO FIX THE 'TypeError'
+  // Channel ID where the permanent status embed will live
+  LAVALINK_STATUS_CHANNEL_ID: '1442844239992979549', 
+
   activity: {
     name: 'INFINITY MUSIC',
-    type: 'LISTENING' // PLAYING, STREAMING, LISTENING, WATCHING, COMPETING
+    type: 'LISTENING' 
   },
 
-  // Lavalink Configuration
   lavalink: {
-    // Note: Your error log shows 'Harmonix-NODE2' is attempting to connect.
-    // Ensure your Lavalink server details (URL, Port, Auth) are correct.
     nodes: [{
-      name: 'Rick_Music', // <-- NAME CHANGED HERE
-      url: 'nexus.voidhosting.vip:6004', 
+      name: 'Rick_Music', 
+      url: 'pnode1.danbot.host:1351', 
       auth: 'cocaine', 
       secure: false, 
     }],
     defaultSearchEngine: 'youtube_music'
   },
 
-  // Hosting Configuration
   express: {
     port: 3000, 
     host: '0.0.0.0', 
   },
   
-  // Support Server Link
   support: {
     server: process.env.SUPPORT_SERVER || 'https://discord.gg/YABAKcjJhC'
   },
 
-  // Emojis - All your custom animated IDs
   emojis: {
     play: '<a:play:1443619986907336785>',
     pause: '<a:pause:1443620907233837066>',
@@ -52,8 +48,6 @@ module.exports = {
     seek: '<a:seek:1393210917755424789>', 
     remove: '<a:remove:1443622707873976411>', 
     clear: '<a:clear:1443622995359694849>', 
-    
-    // Standard Utility/Status Emojis 
     success: '✅',
     error: '❌',
     warn: '⚠️',
